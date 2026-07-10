@@ -39,6 +39,9 @@ class RagSample(BaseModel):
     faithfulness: int = Field(ge=0, le=1)
     relevance: int = Field(ge=0, le=1)
     marker: str | None = None
+    # Synthetic (pseudo-corpus) flag; together with the "pseudo_" id prefix it
+    # is what the cloud data-leak guard checks (see rag_reliability.guard).
+    synthetic: bool = False
 
     @field_validator("marker")
     @classmethod
@@ -63,6 +66,12 @@ class Prediction(BaseModel):
     marker_pred: str | None = None
     raw_output: str | None = None
     invalid_output: bool = False
+    # Judge-method probabilities (Method 3 logprobs path). Binary *_pred fields
+    # stay the evaluation contract; probabilities are extra evidence and record
+    # how they were obtained ("logprobs", "regex" or "default").
+    faithfulness_prob: float | None = Field(default=None, ge=0, le=1)
+    relevance_prob: float | None = Field(default=None, ge=0, le=1)
+    prob_method: str | None = None
 
     @property
     def reliable_pred(self) -> int:
