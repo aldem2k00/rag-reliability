@@ -6,6 +6,7 @@ from rag_reliability.methods.m3.prompts import (
     build_system_prompt,
     build_user_prompt,
 )
+from rag_reliability.methods.m3.logprobs import extract_verdict_probs
 from rag_reliability.methods.m3.parsing import parse_m3_prediction
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "build_few_shot_system",
     "build_system_prompt",
     "build_user_prompt",
+    "extract_verdict_probs",
     "parse_m3_prediction",
 ]

@@ -157,6 +157,28 @@ def test_build_method_command_for_m3_openai(tmp_path: Path) -> None:
     assert "results/m3/cache" in run.run_command
 
 
+def test_build_method_command_for_m3_openai_judge(tmp_path: Path) -> None:
+    run = run_benchmark.build_method_run(
+        method="m3_openai_judge",
+        data=Path("data/dummy.jsonl"),
+        output_dir=tmp_path,
+        python="python",
+        model="remote-judge",
+        m3_api_base="https://example.test/v1",
+        m3_cache_dir="results/m3/cache",
+        m3_profile="cloud",
+        m3_concurrency=8,
+    )
+
+    assert run.run_command[0:2] == ["python", "scripts/run_m3.py"]
+    assert "openai_judge" in run.run_command
+    assert "--api-base" in run.run_command
+    assert "--profile" in run.run_command
+    assert "cloud" in run.run_command
+    assert "--concurrency" in run.run_command
+    assert "8" in run.run_command
+
+
 def test_build_method_run_passes_limit_to_runner_and_evaluator(tmp_path: Path) -> None:
     run = run_benchmark.build_method_run(
         method="m3_zero_shot",

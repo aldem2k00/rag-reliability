@@ -24,6 +24,7 @@ METHODS = (
     "m3_few_shot",
     "m3_gepa",
     "m3_openai",
+    "m3_openai_judge",
     "m6_selfcheck",
 )
 
@@ -67,6 +68,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--m3-api-base", default="http://localhost:8000/v1")
     parser.add_argument("--m3-api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--m3-cache-dir", default="results/m3/cache")
+    parser.add_argument("--m3-profile", choices=["local", "cloud"], default="local")
+    parser.add_argument("--m3-concurrency", type=int, default=1)
     parser.add_argument("--m6-features", default="results/m6/features.jsonl")
     parser.add_argument("--m6-contradiction-threshold", type=float, default=0.5)
     parser.add_argument("--m6-entropy-threshold", type=float, default=1.0)
@@ -129,6 +132,8 @@ def build_method_run(  # noqa: PLR0913, PLR0912
     m3_api_base: str = "http://localhost:8000/v1",
     m3_api_key_env: str = "OPENAI_API_KEY",
     m3_cache_dir: str = "results/m3/cache",
+    m3_profile: str = "local",
+    m3_concurrency: int = 1,
     m6_features: str = "results/m6/features.jsonl",
     m6_contradiction_threshold: float = 0.5,
     m6_entropy_threshold: float = 1.0,
@@ -237,8 +242,12 @@ def build_method_run(  # noqa: PLR0913, PLR0912
             encoder_pos_weight_mode,
         ]
     elif method.startswith("m3_"):
-        m3_mode = "zero_shot" if method == "m3_openai" else method.removeprefix("m3_")
-        backend = "openai" if method == "m3_openai" else m3_backend
+        if method in ("m3_openai", "m3_openai_judge"):
+            m3_mode = "zero_shot"
+            backend = "openai" if method == "m3_openai" else "openai_judge"
+        else:
+            m3_mode = method.removeprefix("m3_")
+            backend = m3_backend
         command = [
             python,
             "scripts/run_m3.py",
@@ -255,7 +264,7 @@ def build_method_run(  # noqa: PLR0913, PLR0912
             "--max-tokens",
             str(m3_max_tokens),
         ]
-        if method == "m3_openai":
+        if method in ("m3_openai", "m3_openai_judge"):
             command.extend(
                 [
                     "--api-base",
@@ -264,6 +273,15 @@ def build_method_run(  # noqa: PLR0913, PLR0912
                     m3_api_key_env,
                     "--cache-dir",
                     m3_cache_dir,
+                ]
+            )
+        if method == "m3_openai_judge":
+            command.extend(
+                [
+                    "--profile",
+                    m3_profile,
+                    "--concurrency",
+                    str(m3_concurrency),
                 ]
             )
         if method == "m3_few_shot":
@@ -337,6 +355,8 @@ def main() -> None:
             m3_api_base=args.m3_api_base,
             m3_api_key_env=args.m3_api_key_env,
             m3_cache_dir=args.m3_cache_dir,
+            m3_profile=args.m3_profile,
+            m3_concurrency=args.m3_concurrency,
             m6_features=args.m6_features,
             m6_contradiction_threshold=args.m6_contradiction_threshold,
             m6_entropy_threshold=args.m6_entropy_threshold,
