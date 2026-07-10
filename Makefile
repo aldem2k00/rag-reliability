@@ -9,7 +9,7 @@ ENCODER_EPOCHS ?= 3
 ENCODER_LEARNING_RATE ?= 2e-5
 ENCODER_POS_WEIGHT_MODE ?= none
 
-.PHONY: help install install-mlx install-lettucedetect install-m6 install-cloud test lint check dummy \
+.PHONY: help install install-mlx install-lettucedetect install-m6 install-cloud install-gepa test lint check dummy \
         install-encoder baseline-direct baseline-marker encoder-baseline train-direct \
         train-marker train-lettucedetect infer-direct infer-marker infer-lettucedetect \
         install-demo serve-demo benchmark-dummy eval-all clean
@@ -32,6 +32,9 @@ install-m6: ## Add Method 6 SelfCheck/NLI feature deps
 
 install-cloud: ## Add OpenAI-compatible cloud backend deps
 	uv pip install -e ".[cloud]"
+
+install-gepa: ## Add DSPy deps for GEPA prompt evolution (Method 3)
+	uv pip install -e ".[gepa]"
 
 install-encoder: ## Add supervised encoder baseline deps
 	uv pip install -e ".[encoder]"

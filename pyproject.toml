@@ -48,6 +48,9 @@ m6 = [
 cloud = [
     "openai>=1.0",
 ]
+gepa = [
+    "dspy>=2.6",
+]
 demo = [
     "gradio>=4.0,<6",
     "huggingface-hub>=0.34,<1",
