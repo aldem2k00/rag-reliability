@@ -1,0 +1,51 @@
+config:
+  llm:
+    api_base: http://localhost:8000/v1
+    api_key: '***'
+    model: Qwen/Qwen2.5-7B-Instruct
+    reflection_model: Qwen/Qwen2.5-32B-Instruct
+    reflection_api_base: http://localhost:8001/v1
+    max_ctx_chars: 24000
+  data:
+    train: data/processed/alfa_dev_train.jsonl
+    val: data/processed/alfa_dev_val.jsonl
+    test: data/processed/alfa_dev_test.jsonl
+  alfa:
+    raw_csv: data/raw/alfa/data.csv
+    seed: 42
+  tracking:
+    enabled: false
+    uri: file:./mlruns
+  m3:
+    mode: gepa
+    gepa_auto: light
+    gepa_train_size: 300
+    use_marker_feedback: true
+    seed: 0
+    out_prompt: artifacts/m3_optimized_prompt.txt
+    out_pred_dir: predictions/m3
+    judge_cache: artifacts/m3_judge_cache
+  m6:
+    n_samples: 10
+    temperature: 0.8
+    top_p: 0.95
+    max_new_tokens: 512
+    nli_model: MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7
+    embed_model: intfloat/multilingual-e5-large
+    samples_cache: artifacts/m6_samples
+    features_cache: artifacts/m6_features
+    out_pred_dir: predictions/m6
+    entail_threshold: 0.5
+  profile: local
+git_hash: 152c70ecdf5246e24a373aed506000f69ceec33f
+profile: local
+split: curator_test
+method: baseline
+variant: curator_encoder
+model_name: deepvk/RuModernBERT-base
+smoke: true
+limit: 120
+max_length: 512
+epochs: 1
+batch_size: 8
+seed: 42

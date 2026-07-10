@@ -1,0 +1,9 @@
+{
+  "f1_macro_reliable": 0.595959595959596,
+  "f1_macro_faith": 0.3939393939393939,
+  "f1_macro_rel": 0.6266666666666667,
+  "t_faith": 0.01,
+  "t_rel": 0.41000000000000003,
+  "n": 20,
+  "share_single_cluster_test": 0.2
+}

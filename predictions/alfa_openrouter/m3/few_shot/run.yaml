@@ -1,0 +1,71 @@
+config:
+  profile: cloud
+  guard:
+    allow_real_data: true
+  llm:
+    api_base: https://openrouter.ai/api/v1
+    api_key: '***'
+    model: qwen/qwen-2.5-7b-instruct
+    reflection_model: qwen/qwen-2.5-72b-instruct
+    reflection_api_base: https://openrouter.ai/api/v1
+    max_ctx_chars: 24000
+    concurrency_default: 8
+    openrouter_extra_body:
+      provider:
+        require_parameters: true
+        allow_fallbacks: false
+        order:
+        - Phala
+  data:
+    train: data/processed/alfa_dev_train.jsonl
+    val: data/processed/alfa_dev_val.jsonl
+    test: data/processed/alfa_dev_test.jsonl
+  alfa:
+    raw_csv: data/raw/alfa/data.csv
+    seed: 42
+  m3:
+    mode: few_shot
+    seed: 0
+    gepa:
+      train_size: 300
+      auto: light
+      seeds:
+      - 0
+      - 1
+      - 2
+      variants:
+        markers:
+          use_marker_feedback: true
+          out_prompt: artifacts/alfa_or/m3_prompt_markers_seed{seed}.txt
+        plain:
+          use_marker_feedback: false
+          out_prompt: artifacts/alfa_or/m3_prompt_plain_seed{seed}.txt
+      reflection:
+        model: qwen/qwen-2.5-72b-instruct
+        api_base: https://openrouter.ai/api/v1
+        max_tokens: 8000
+    out_prompt: artifacts/alfa_or/m3_optimized_prompt.txt
+    out_pred_dir: predictions/alfa_openrouter/m3
+    judge_cache: artifacts/alfa_or/m3_judge_cache
+  m6:
+    n_samples: 10
+    temperature: 0.8
+    top_p: 0.95
+    max_new_tokens: 512
+    nli_model: MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7
+    embed_model: intfloat/multilingual-e5-large
+    samples_cache: artifacts/alfa_or/m6_samples
+    features_cache: artifacts/alfa_or/m6_features
+    out_pred_dir: predictions/alfa_openrouter/m6
+    entail_threshold: 0.5
+  tracking:
+    enabled: true
+    uri: file:./mlruns
+git_hash: 62dbfde4054aa53c10dfb55f3665754329273caa
+profile: cloud
+seed: 0
+split: test
+limit: null
+method: m3
+variant: few_shot
+prompt_file: null
