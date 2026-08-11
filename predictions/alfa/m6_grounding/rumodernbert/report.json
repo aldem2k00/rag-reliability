@@ -1,0 +1,118 @@
+{
+  "axes": {
+    "faithfulness_f1_macro": {
+      "above_noise": true,
+      "ci95": [
+        0.510016019656532,
+        0.5624400863652246
+      ],
+      "null_percentile": 99.8,
+      "value": 0.5370310177661097
+    },
+    "relevance_f1_macro": {
+      "above_noise": true,
+      "ci95": [
+        0.49880495857138196,
+        0.5540674465760971
+      ],
+      "null_percentile": 96.8,
+      "value": 0.5261446168882598
+    }
+  },
+  "comparisons": [],
+  "diagnostics": {
+    "bootstrap_B": 10000,
+    "degenerate": {
+      "const_share": 0.6851351351351351,
+      "is_degenerate": false,
+      "output_entropy": 1.2092767445347237
+    },
+    "grid_step": 0.01,
+    "invalid_output_rate": 0.0,
+    "mean_per_repeat_f1": 0.5380030060509515,
+    "null_aggregation": "mean of per-repeat OOF macro-F1 (nullcal contract)",
+    "null_trials": 500,
+    "operating_threshold": 0.46,
+    "per_repeat_f1": [
+      0.5404279922331121,
+      0.5411876219682186,
+      0.5417495443097249,
+      0.5324172701962084,
+      0.5342326015474937
+    ],
+    "primary_aggregation": "single macro-F1 over the glued OOF decision",
+    "sd_across_repeats": 0.003885235658419965,
+    "seed": 0,
+    "threshold_sd": 0.02714700720153144,
+    "thresholds_per_fold": [
+      0.46,
+      0.52,
+      0.52,
+      0.46,
+      0.46,
+      0.46,
+      0.46,
+      0.46,
+      0.51,
+      0.46,
+      0.46,
+      0.52,
+      0.46,
+      0.52,
+      0.46,
+      0.51,
+      0.46,
+      0.46,
+      0.46,
+      0.52,
+      0.43,
+      0.46,
+      0.46,
+      0.46,
+      0.46
+    ]
+  },
+  "method": "m6_grounding",
+  "operational": {
+    "base_rate_unreliable": 0.275,
+    "confusion": {
+      "fn": 264,
+      "fp": 280,
+      "tn": 793,
+      "tp": 143
+    },
+    "flagged_share": 0.28581081081081083,
+    "lift": 1.1801909205028696,
+    "pr_auc_unreliable": 0.32455250313828915,
+    "recall_at_precision": {
+      "0.5": 0.04176904176904177,
+      "0.6": 0.014742014742014743,
+      "0.7": 0.0
+    },
+    "roc_auc": 0.5546929204897518
+  },
+  "primary": {
+    "above_noise": true,
+    "ci95": [
+      0.5127678676515323,
+      0.5658386684471408
+    ],
+    "null_percentile": 100.0,
+    "value": 0.5397367859238128
+  },
+  "protocol": {
+    "corpus": "data/alfa.jsonl",
+    "corpus_sha256": "c386cd4e342463381ec74d4b6dd3539a22ea9eaae769fd1b2c910d4ca12f95b5",
+    "folds": "data/splits/folds_alfa.json",
+    "folds_sha256": "22e766097fa2551f6009ebbb1c3fbfd740ee201eb243c1b7ac19730e5ee3b69c",
+    "n_corpus": 2233,
+    "n_evaluated": 1480,
+    "n_excluded": 753,
+    "n_folds": 5,
+    "n_repeats": 5,
+    "score_expr": "m6.min_entail",
+    "scores": "predictions/alfa/m6_grounding/rumodernbert/scores.jsonl"
+  },
+  "schema_version": 1,
+  "variant": "rumodernbert"
+}

@@ -21,8 +21,17 @@ batch 1, `--mask-prompt`, 29 train samples.
 
 ## Results (organizer data, 2026-07-09)
 
-Organizer data converted from `from_organizators/data/data.zip`: 2245 rows,
-1622 reliable / 623 unreliable after `faithfulness AND relevance`.
+The canonical organizer corpus contains 2233 unique cases. The former raw-row
+count and its `1622 / 623` label breakdown are withdrawn because they described
+the non-canonical pre-deduplication snapshot. Canonical counts and every metric
+below will be recalculated on the group-aware CV protocol from
+[`docs/specs/10_PHASE0_измерительный_контур.md`](specs/10_PHASE0_измерительный_контур.md).
+
+The table is retained as an audit trail and mixes two historical protocols:
+the dummy and Qwen rows are in-sample measurements on the converted snapshot,
+whereas the encoder rows use an old held-out split. Thus the in-sample Qwen
+value `0.4946` is not inconsistent with the held-out value `0.4701` reported
+below; neither may be compared with the canonical CV results.
 
 | Run | primary metric | Accuracy | Precision | Recall | Reliable F1 | ROC-AUC | Notes |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -35,14 +44,30 @@ Organizer data converted from `from_organizators/data/data.zip`: 2245 rows,
 | RuModernBERT encoder, 512, balanced weight, tuned threshold | 0.5593 | 0.6927 | 0.7500 | 0.8611 | 0.8017 | 0.6562 | Train/validation/test, threshold 0.44 |
 | RuModernBERT encoder, 512, no weight, 2 epochs | 0.5693 | 0.6347 | 0.7667 | 0.7099 | 0.7372 | 0.6643 | Threshold 0.73 |
 | RuModernBERT encoder, 512, no weight, 3 epochs, lr=1e-5 | 0.5756 | 0.6949 | 0.7576 | 0.8488 | 0.8006 | 0.6610 | Threshold 0.68 |
-| RuModernBERT encoder, 512, no weight, 3 epochs, lr=2e-5 | **0.5879** | 0.6815 | 0.7670 | 0.8025 | 0.7843 | 0.6614 | Threshold 0.72 |
+| RuModernBERT encoder, 512, no weight, 3 epochs, lr=2e-5 | 0.5879 | 0.6815 | 0.7670 | 0.8025 | 0.7843 | 0.6614 | Threshold 0.72 |
 | RuModernBERT encoder, 512, no weight, 3 epochs, lr=3e-5 | 0.5539 | 0.6659 | 0.7486 | 0.8086 | 0.7774 | 0.6558 | Threshold 0.69 |
 
-For encoder runs, the primary metric is binary reliability macro-F1. The
-current working encoder baseline is the 512-token / no-class-weight / 3-epoch
-run with `learning_rate=2e-5`. Lowering LR to `1e-5` and raising it to `3e-5`
-both hurt test macro-F1. Longer context at 1024 fits in memory but hurts
-macro-F1 because the model becomes too positive.
+For encoder runs, the primary metric is binary reliability macro-F1. Calling
+`0.5879` “best” is withdrawn: seven encoder configurations were compared on
+the same 225-case test column, so selecting their maximum has expected
+optimism of `+0.049`. The value will be recalculated under the canonical
+group-aware CV protocol. The old sweep still shows that the selected
+512-token / no-class-weight / 3-epoch configuration used
+`learning_rate=2e-5`, but it is not a valid held-out model selection result.
+
+## Methods 3/6 — organizer data (val-fitted thresholds)
+
+Pending Track B. This table is reserved for test metrics after fitting each
+method's thresholds on the validation split only; no organizer result is
+recorded here yet.
+
+| variant | test reliable_f1_macro | t_faith | t_rel | invalid_rate | notes |
+|---|---:|---:|---:|---:|---|
+| pending Track B | pending | pending | pending | pending | fill with threshold-report output only |
+
+The aldem results use `split_samples` with seed 42. They are incomparable with
+skol results, which use grouped splits with seed 2233; never mix the numbers
+in a leaderboard or comparison.
 
 ## LoRA benchmark status (organizer data, 2026-07-09)
 
@@ -83,12 +108,14 @@ Current stopping point:
 
 ## Direct LoRA controlled sweep (organizer data, 2026-07-10)
 
-The direct LoRA training set is dominated by `(faithfulness=1, relevance=1)`
-labels: 1622 of 2245 total rows. Both the original two-epoch run and a new
-one-epoch run predicted `(1, 1)` for every held-out example. To isolate this
-effect, a second run used a deterministic balanced SFT train set with 256 rows
-per `(faithfulness, relevance)` pair (1024 rows total); validation and the
-seed-42 225-row test split were unchanged.
+The direct LoRA training set was dominated by `(faithfulness=1, relevance=1)`
+labels in the legacy snapshot. The former `1622 / total-row-count` ratio is
+withdrawn because it was computed before canonical deduplication; the class
+balance will be recalculated on the 2233-case split. Both the original
+two-epoch run and a new one-epoch run predicted `(1, 1)` for every held-out
+example. To isolate this effect, a second run used a deterministic balanced
+SFT train set with 256 rows per `(faithfulness, relevance)` pair (1024 rows
+total); validation and the seed-42 225-row test split were unchanged.
 
 | Run | reliable_f1_macro | faithfulness_f1_macro | relevance_f1_macro | invalid |
 |---|---:|---:|---:|---:|

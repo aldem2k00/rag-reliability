@@ -1,0 +1,36 @@
+profile: local
+seed: 0
+model: logreg
+calibrate: auto
+data: data/alfa.jsonl
+folds: data/splits/folds_alfa.json
+sources:
+  m3: predictions/alfa/m3/zero_shot/scores.jsonl
+  m6: predictions/alfa/m6_grounding/base/scores.jsonl
+  surf: predictions/alfa/baselines/surface_e5/scores.jsonl
+requested_features:
+- surf.p_faith
+- surf.p_rel
+- m3.p_faith
+- enc.logit
+- ld.max_unsup
+- m6.min_entail
+- m6.mean_entail
+- m6.frac_unsupported
+available_features:
+- surf.p_faith
+- surf.p_rel
+- m3.p_faith
+- m6.min_entail
+- m6.mean_entail
+- m6.frac_unsupported
+final_features:
+- surf.p_faith
+- surf.p_rel
+- m3.p_faith
+git:
+  hash: a4737f7
+  dirty: true
+  changed:
+  - predictions/stack/v2/report.json
+  - predictions/stack/v2/scores.jsonl

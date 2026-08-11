@@ -1,0 +1,41 @@
+name: ft-judge-fold3
+desc: >-
+  Fine-tuning судьи Qwen2.5-7B, фолд 3 из folds.json. ~1.5 ч на фолд.
+  Пять фолдов подряд — ~7.5 ч, поэтому каждый фолд отдельным заданием.
+
+# Требует scripts/train_ft_judge.py: его в репозитории пока нет, контракт —
+# в docs/datasphere.md, раздел «FT судьи». Обучение в ячейках ноутбука запрещено.
+#
+# --save-strategy epoch: при "no" обрыв стоит всего прогона.
+# --pos-weight-mode balanced + --oversample-negatives: прошлый прогон на 1.5B
+# схлопнулся в константный вердикт (1,1) из-за дисбаланса 72/28.
+cmd: >-
+  python scripts/train_ft_judge.py
+  --data data/alfa.jsonl --folds data/splits/folds_alfa.json --fold 3 --repeat 0
+  --model Qwen/Qwen2.5-7B-Instruct --mode direct
+  --tuning lora --lora-r 256 --lora-alpha 512 --lora-target-modules all-linear
+  --learning-rate 2e-4 --epochs 3 --max-length 2048
+  --batch-size 1 --grad-accum 8
+  --pos-weight-mode balanced --oversample-negatives
+  --save-strategy epoch --save-total-limit 2 --seed 42 --resume
+  --output-dir results/ft_judge/direct_fold3
+  --predictions-output predictions/alfa/ft_judge/direct_fold3/scores.jsonl
+  --diagnostics-output predictions/alfa/ft_judge/direct_fold3/ft_diagnostics.json
+
+env:
+  python:
+    version: "3.11"
+    pip-file: jobs/requirements.txt
+    root-paths:
+      - src/
+      - scripts/
+
+inputs:
+  - data/
+  - configs/
+
+outputs:
+  - predictions/alfa/ft_judge/direct_fold3/
+  - results/ft_judge/direct_fold3/
+
+cloud-instance-type: g2.1

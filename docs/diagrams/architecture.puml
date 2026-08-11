@@ -89,7 +89,7 @@ BENCH --> EVAL
 EVAL --> OUT
 
 note bottom of REG
-  Both CLI and demo read the same 15-method
+  Both CLI and demo read the same 19-method
   registry — adding a MethodSpec surfaces it
   everywhere, no per-entry-point edits.
 end note

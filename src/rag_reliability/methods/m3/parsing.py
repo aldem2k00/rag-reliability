@@ -7,7 +7,9 @@ import re
 from rag_reliability.schema import Prediction
 
 _VERDICT_RE = re.compile(
-    r"FAITHFULNESS:\s*(PASS|FAIL).*?RELEVANCE:\s*(PASS|FAIL)",
+    r"[-*\s]*\**\s*FAITHFULNESS\s*:?\**\s*(PASS|FAIL)"
+    r".*?"
+    r"[-*\s]*\**\s*RELEVANCE\s*:?\**\s*(PASS|FAIL)",
     re.IGNORECASE | re.DOTALL,
 )
 

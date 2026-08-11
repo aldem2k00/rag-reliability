@@ -1,5 +1,5 @@
 @startmindmap method-taxonomy
-title RAG Reliability Judge — Method Taxonomy (15 methods)
+title RAG Reliability Judge — Method Taxonomy (19 methods)
 
 skinparam shadowing false
 <style>
@@ -30,10 +30,15 @@ mindmapDiagram {
 *** m3_gepa <<batch>>
 *** m3_openai <<batch>>
 *** m3_openai_judge <<batch>>
+*** m3_perchunk <<batch>>
+*** ft_judge <<batch>>
 left side
 ** <&pulse> feature scoring <<family>>
 *** lettucedetect <<demo>>
 *** m6_selfcheck <<batch>>
+** <&spreadsheet> surface <<family>>
+*** surface <<batch>>
+*** majority <<batch>>
 ** <&graph> supervised <<family>>
 *** encoder <<demo>>
 ** <&list> rule-based <<family>>
@@ -41,7 +46,7 @@ left side
 
 legend right
   <back:#E8F5E9>   </back> demo — runs in the Gradio UI in-process (11)
-  <back:#FFF3E0>   </back> batch-only — needs an endpoint / precomputed features / evolved prompt (4)
+  <back:#FFF3E0>   </back> batch-only — needs an endpoint / precomputed features / folds (8)
   ----
   direct = {faithfulness, relevance}
   marker = additionally names the error type first

@@ -69,10 +69,49 @@ class Prediction(BaseModel):
     faithfulness_prob: float | None = Field(default=None, ge=0, le=1)
     relevance_prob: float | None = Field(default=None, ge=0, le=1)
     prob_method: str | None = None
+    scores: dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("scores")
+    @classmethod
+    def _score_keys(cls, value: dict[str, float]) -> dict[str, float]:
+        """Не допускает коллизий сигналов при сборке фич по префиксу метода."""
+        bad = [
+            key
+            for key in value
+            if "." not in key or key.startswith(".") or key.endswith(".")
+        ]
+        if bad:
+            raise ValueError(
+                f"score keys must be '<method>.<signal>', got {bad[:5]}"
+            )
+        return value
 
     @property
     def reliable_pred(self) -> int:
         return int(self.faithfulness_pred == 1 and self.relevance_pred == 1)
+
+
+class MetricWithCI(BaseModel):
+    """Метрика с обязательным интервалом для воспроизводимого отчёта."""
+
+    value: float
+    ci95: tuple[float, float]
+    null_percentile: float | None = None
+    above_noise: bool | None = None
+
+
+class EvaluationReport(BaseModel):
+    """Схема report.json: primary физически не существует без 95% ДИ."""
+
+    schema_version: int = 1
+    method: str
+    variant: str
+    protocol: dict
+    primary: MetricWithCI
+    axes: dict[str, MetricWithCI] = Field(default_factory=dict)
+    operational: dict = Field(default_factory=dict)
+    diagnostics: dict = Field(default_factory=dict)
+    comparisons: list[dict] = Field(default_factory=list)
 
 
 class EvaluationResult(BaseModel):

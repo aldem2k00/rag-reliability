@@ -8,22 +8,43 @@ consumes precomputed feature JSONL and emits standard ``Prediction`` records.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import numpy as np
 
 from rag_reliability.schema import RagSample
 
-_SENTENCE_RE = re.compile(r"[^.!?\n]+[.!?]?|[^\s]+", re.UNICODE)
 
+def razdel_sentences(text: str) -> list[str]:
+    """Русская сентенизация через razdel; пустой текст даёт один пустой спан.
 
-def sentences(text: str) -> list[str]:
-    """Split text into rough sentence spans, preserving a fallback for blanks."""
-    stripped = text.strip()
-    if not stripped:
+    Прежняя регулярка резала по каждой точке и превращала пошаговую банковскую
+    инструкцию в 12 фрагментов вместо 5 предложений: «макс.», «т.д.», «0.5%» и
+    нумерация шагов ломались. В grounding предложение — это гипотеза NLI, и
+    обрывок «1.» не подкрепляется ничем, занижая min_entail на ровном месте.
+
+    Остаточное расхождение с карточкой: razdel всё же делит «Лимит макс. 5000
+    руб.» на два спана (регулярка давала три). Собственную правку списка
+    сокращений сюда не добавляем — она была бы решением за карточку.
+
+    Импорт ленивый: razdel не входит в зависимости этой ветки (см. PR,
+    «Требуется от других»), а модуль импортируется и там, где сентенизация не
+    нужна.
+    """
+    try:
+        from razdel import sentenize  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover - зависит от окружения
+        raise ImportError(
+            "Метод 6 требует razdel для русской сентенизации; "
+            'установите: uv pip install razdel (или добавьте в extras "m6")'
+        ) from exc
+    if not text.strip():
         return [text]
-    return [match.group(0).strip() for match in _SENTENCE_RE.finditer(text) if match.group(0).strip()]
+    return [span.text.strip() for span in sentenize(text) if span.text.strip()]
+
+
+#: Историческое публичное имя (используется __init__ и скриптами подготовки фич).
+sentences = razdel_sentences
 
 
 def selfcheck_scores(answer: str, samples: list[str], nli) -> dict[str, float]:

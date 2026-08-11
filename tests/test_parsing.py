@@ -1,5 +1,8 @@
 """Tests for robust output parsing."""
 
+import pytest
+
+from rag_reliability.methods.m3.parsing import parse_m3_prediction
 from rag_reliability.parsing import extract_json_object, normalize_binary, parse_prediction
 
 
@@ -97,3 +100,20 @@ def test_normalize_binary() -> None:
     assert normalize_binary(2) is None
     assert normalize_binary("yes") is None
     assert normalize_binary(None) is None
+
+
+@pytest.mark.parametrize(
+    ("raw_output", "expected"),
+    [
+        ("- **FAITHFULNESS:** PASS\n- **RELEVANCE:** FAIL", (1, 0)),
+        ("* **FAITHFULNESS:** FAIL\n* **RELEVANCE:** PASS", (0, 1)),
+        ("**faithfulness** pass\n**relevance** fail", (1, 0)),
+    ],
+)
+def test_m3_regex_matches_markdown_verdicts(
+    raw_output: str,
+    expected: tuple[int, int],
+) -> None:
+    prediction = parse_m3_prediction(raw_output, "sample")
+    assert (prediction.faithfulness_pred, prediction.relevance_pred) == expected
+    assert prediction.invalid_output is False

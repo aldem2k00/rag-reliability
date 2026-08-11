@@ -1,0 +1,346 @@
+{
+  "schema_version": 1,
+  "method": "stack",
+  "variant": "v2",
+  "protocol": {
+    "data": "data/alfa.jsonl",
+    "data_sha256": "c386cd4e342463381ec74d4b6dd3539a22ea9eaae769fd1b2c910d4ca12f95b5",
+    "folds": "data/splits/folds_alfa.json",
+    "folds_sha256": "22e766097fa2551f6009ebbb1c3fbfd740ee201eb243c1b7ac19730e5ee3b69c",
+    "n_folds": 5,
+    "n_repeats": 5,
+    "grid_step": 0.01
+  },
+  "primary": {
+    "value": 0.6543385156937518,
+    "ci95": [
+      0.5955845883989597,
+      0.7096545357614767
+    ],
+    "null_percentile": 100.0,
+    "above_noise": true
+  },
+  "axes": {
+    "roc_auc": {
+      "value": 0.6127705627705627,
+      "ci95": [
+        0.5371066225034995,
+        0.6845096484271742
+      ]
+    }
+  },
+  "diagnostics": {
+    "per_repeat_f1": [
+      0.6361218482924926,
+      0.643950171761685,
+      0.6387120247407677,
+      0.646570841889117,
+      0.6623138135074474
+    ],
+    "sd_across_repeats": 0.009168136563130353,
+    "n_evaluated": 331,
+    "n_excluded_by_folds": 115,
+    "bootstrap_B": 10000,
+    "null_trials": 500
+  },
+  "ablation": [
+    {
+      "configuration": "surface (base)",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5791238007166801,
+        "ci95": [
+          0.5222006360094207,
+          0.634776851861582
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5792640692640693,
+        "ci95": [
+          0.5090644781094417,
+          0.6496126112418866
+        ]
+      },
+      "sd_across_repeats": 0.019399175261414308,
+      "n": 331,
+      "delta_to_base": null
+    },
+    {
+      "configuration": "+ m3.p_faith",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m3.p_faith"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.6543385156937518,
+        "ci95": [
+          0.5955845883989597,
+          0.7096545357614767
+        ]
+      },
+      "roc_auc": {
+        "value": 0.6127705627705627,
+        "ci95": [
+          0.5371066225034995,
+          0.6845096484271742
+        ]
+      },
+      "sd_across_repeats": 0.009168136563130353,
+      "n": 331,
+      "delta_to_base": {
+        "value": 0.07521471497707166,
+        "ci95": [
+          0.015816039738556328,
+          0.1344440953717222
+        ],
+        "p": 0.013
+      }
+    },
+    {
+      "configuration": "+ enc.logit",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "enc.logit"
+      ],
+      "status": "unavailable",
+      "reason": "source artifact is absent",
+      "macro_f1": null,
+      "roc_auc": null,
+      "sd_across_repeats": null,
+      "n": null,
+      "delta_to_base": null
+    },
+    {
+      "configuration": "+ ld.max_unsup",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "ld.max_unsup"
+      ],
+      "status": "unavailable",
+      "reason": "source artifact is absent",
+      "macro_f1": null,
+      "roc_auc": null,
+      "sd_across_repeats": null,
+      "n": null,
+      "delta_to_base": null
+    },
+    {
+      "configuration": "+ m6.min_entail",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m6.min_entail"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5686441158139272,
+        "ci95": [
+          0.5128010704727921,
+          0.6256190633064295
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5897835497835497,
+        "ci95": [
+          0.5194286469544201,
+          0.6595000285476454
+        ]
+      },
+      "sd_across_repeats": 0.01578911142596596,
+      "n": 331,
+      "delta_to_base": {
+        "value": -0.010479684902752973,
+        "ci95": [
+          -0.05466983870398849,
+          0.03479038767422688
+        ],
+        "p": 0.6574
+      }
+    },
+    {
+      "configuration": "+ m6.mean_entail",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m6.mean_entail"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5677685326081091,
+        "ci95": [
+          0.5121970487046309,
+          0.6230184381444885
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5903896103896105,
+        "ci95": [
+          0.5203977501134669,
+          0.6591749897356526
+        ]
+      },
+      "sd_across_repeats": 0.016456488288684522,
+      "n": 331,
+      "delta_to_base": {
+        "value": -0.011355268108571015,
+        "ci95": [
+          -0.052779733900867785,
+          0.03165974742405081
+        ],
+        "p": 0.6172
+      }
+    },
+    {
+      "configuration": "+ m6.frac_unsupported",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m6.frac_unsupported"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5654266958424508,
+        "ci95": [
+          0.5096956638836521,
+          0.6208635890753564
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5855844155844157,
+        "ci95": [
+          0.5155027967550257,
+          0.6553314714588604
+        ]
+      },
+      "sd_across_repeats": 0.011804279371901068,
+      "n": 331,
+      "delta_to_base": {
+        "value": -0.013697104874229371,
+        "ci95": [
+          -0.05368297278852129,
+          0.027302136582070254
+        ],
+        "p": 0.5244
+      }
+    },
+    {
+      "configuration": "all",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m3.p_faith",
+        "m6.min_entail",
+        "m6.mean_entail",
+        "m6.frac_unsupported"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.608764495985727,
+        "ci95": [
+          0.5502070487163048,
+          0.66327428573629
+        ]
+      },
+      "roc_auc": {
+        "value": 0.6189610389610389,
+        "ci95": [
+          0.5468911218092253,
+          0.6890468775230295
+        ]
+      },
+      "sd_across_repeats": 0.013990811186135857,
+      "n": 331,
+      "delta_to_base": {
+        "value": 0.02964069526904689,
+        "ci95": [
+          -0.027983298742126454,
+          0.08558585334013204
+        ],
+        "p": 0.3086
+      }
+    },
+    {
+      "configuration": "all - m3.p_faith",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m6.min_entail",
+        "m6.mean_entail",
+        "m6.frac_unsupported"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5663233035149544,
+        "ci95": [
+          0.5106427625060581,
+          0.622109405363389
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5850649350649351,
+        "ci95": [
+          0.5152812201925996,
+          0.6548087923934958
+        ]
+      },
+      "sd_across_repeats": 0.010055393458275488,
+      "n": 331,
+      "delta_to_base": {
+        "value": -0.012800497201725713,
+        "ci95": [
+          -0.06632314643087009,
+          0.04128178162800073
+        ],
+        "p": 0.6524
+      }
+    },
+    {
+      "configuration": "+ m3.p_rel (diagnostic)",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m3.p_rel"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5675937631689845,
+        "ci95": [
+          0.510753057692362,
+          0.6227899757969111
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5631168831168831,
+        "ci95": [
+          0.49316428685526476,
+          0.6343019682620719
+        ]
+      },
+      "sd_across_repeats": 0.022737254768857133,
+      "n": 331,
+      "delta_to_base": {
+        "value": -0.01153003754769566,
+        "ci95": [
+          -0.03439844645200521,
+          0.01019579704985494
+        ],
+        "p": 0.338
+      }
+    }
+  ],
+  "selection_rule": "include iff lower bound of paired 95% CI for macro-F1 increment > 0",
+  "final_features": [
+    "surf.p_faith",
+    "surf.p_rel",
+    "m3.p_faith"
+  ],
+  "m3_p_rel_contributes": false
+}

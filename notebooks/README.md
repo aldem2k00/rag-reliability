@@ -1,207 +1,101 @@
-# Notebooks
+# Ноутбуки — контур запуска на Yandex DataSphere
 
-## `qwen7b_full_finetune.ipynb`
+> Ищете разбор метода, а не пусковую установку? Он рядом:
+> [`notebooks/standalone/`](standalone/README.md) — по одному самостоятельному
+> ноутбуку на методы 3 и 6, с гипотезами, кодом метода в ячейках и метриками.
+> Этот каталог — про другое: как поднять окружение и запустить корпусный прогон.
 
-Full fine-tuning (**not LoRA**) of `Qwen/Qwen2.5-7B-Instruct` on the repo's
-RAG-reliability-judge task, for GPU-cloud notebook environments (Google
-Colab, Kaggle, Yandex DataSphere) rather than the Apple Silicon / MLX
-workflow used elsewhere in this repo (see [docs/training.md](../docs/training.md)
-for the LoRA/MLX path). It trains **one method per run** — Method 1 (direct)
-or Method 2 (marker) — selected via the `MODE` switch, and produces a
-Hugging Face full-fine-tune checkpoint plus in-notebook evaluation against
-the repo's own parsing and metrics code.
+Ноутбуки `00`–`40` и ничего больше. Каждый — **пусковая установка**: поднимает
+окружение, проверяет железо, поднимает vLLM, вызывает CLI репозитория. Ни одной
+строки бизнес-логики в ячейках.
 
-### How to open it
+Причина жёсткая, а не стилистическая. Единственное, что в проекте работает
+безупречно, — `run.yaml` с git-хэшем рядом с каждым прогоном: 10 из 10 метрик
+воспроизвелись до седьмого знака. Расчёт, живущий в ячейке, не попадает ни в
+`run.yaml`, ни в git-хэш, и воспроизводимость умирает первой.
 
-- **Google Colab**: upload the `.ipynb` (or open it from GitHub via
-  `File > Open notebook > GitHub`), select a GPU runtime (A100/L4/T4
-  depending on availability), and run cells top to bottom.
-- **Kaggle**: create a new notebook, upload/import this file, turn on a GPU
-  accelerator (e.g. 2xT4) in the notebook settings, and run top to bottom.
-- **Yandex DataSphere**: import the notebook into a project, attach a GPU
-  configuration, and run top to bottom. The platform-detection cell
-  recognizes DataSphere via `/home/jupyter` or a `DATASPHERE` marker in
-  `HOSTNAME` and adjusts the default save location accordingly.
+**Не хватает чего-то в CLI — это баг CLI.** Список известных пробелов и требуемых
+контрактов — в [`docs/datasphere.md`](../docs/datasphere.md) §8.
 
-In all three environments the notebook is self-contained: the first cell
-installs the pinned dependency stack (skipped if already satisfied), and the
-second cell clones this repo so training reuses the repo's own formatting
-and parsing code.
+Правило закреплено тестами: `tests/test_notebooks.py` разбирает `.ipynb` без
+исполнения и проверяет, что ячейки не определяют функций, не импортируют счётные
+библиотеки, клонируют `integration` и не вызывают `split_samples`.
 
-### `REPO_URL` — set this before running
+---
 
-Cell 2 clones the repo and imports its format builders, dataset loader,
-parser, and metrics module (`nb_format.build_sft_messages`,
-`dataset.load_jsonl`/`split_samples`, `parsing.parse_prediction`,
-`schema.RagSample`, `metrics`) so that the chat-template formatting used for
-training is byte-for-byte the same code path used at inference time. Before
-running, **edit `REPO_URL` in cell 2** to a reachable clone of this repo
-(your fork, or this repo's remote) — the placeholder
-`https://github.com/<owner>/rag-reliability-judge.git` will not resolve as
-committed.
+## Порядок
 
-If the clone or import fails, the cell **raises** rather than silently
-degrading — the only sanctioned way around that is the documented manual
-step: paste the inline fallback (the bodies of the prompt/target builders,
-`RagSample`, `ALLOWED_MARKERS`, `parse_prediction`, `load_jsonl`,
-`split_samples`) directly into the cell, keeping it in sync with the repo
-modules and `tests/test_nb_format.py`. The repo-import path is the tested
-default; the inline fallback exists only for environments that genuinely
-cannot reach the repo.
+| Ноутбук | Что делает | Конфигурация | Время |
+|---|---|---|---:|
+| [`00_setup.ipynb`](00_setup.ipynb) | стек, клон `integration`, железо, vLLM, **смоук на logprobs** | `g2.1` | ~15 мин |
+| [`10_score_judge.ipynb`](10_score_judge.ipynb) | прогоны судьи по всему корпусу | `g2.1` | 15–50 мин на вариант |
+| [`20_train_encoder.ipynb`](20_train_encoder.ipynb) | OOF-обучение энкодера по фолдам | `g2.1` | 3 мин – 1 ч |
+| [`30_finetune_judge.ipynb`](30_finetune_judge.ipynb) | fine-tuning судьи Qwen2.5-7B по фолдам | `g2.1` | ~1.5 ч на фолд |
 
-### Config switches (cell 3)
+`00_setup.ipynb` запускается первым в каждой GPU-сессии: остальные три
+предполагают уже поднятый vLLM и склонированный репозиторий.
 
-- **`MODE`** — `"direct"` (Method 1) or `"marker"` (Method 2). Trains one
-  method per run; to get both, run the notebook twice with different
-  `MODE` values (each writes to its own `OUTPUT_DIR = f"ft_{MODE}"`).
-- **`USE_REAL_DATA`** — `False` (default) trains on the repo's small dummy
-  set (`data/dummy.jsonl`, copied in via the cloned repo) for a fast smoke
-  run; `True` points at `data/organizers.jsonl` (the real organizer
-  dataset, produced by `scripts/prepare_data.py` — see the main
-  [README](../README.md#advanced--pipelines)) — you must have that file in
-  place before switching this on.
-- **`SAVE_TARGET`** — `"auto"` (default) saves the checkpoint to Google
-  Drive on Colab, `/kaggle/working` on Kaggle, or the notebook's working
-  directory elsewhere; set it to an explicit path to override.
-- **`QLORA_FALLBACK`** — `False` (default). **This is not full fine-tuning.**
-  It is an escape hatch for hardware that cannot support any of the full-FT
-  profiles below: when set to `True`, the notebook loads the model 4-bit
-  quantized and trains a LoRA adapter instead of full weights. Leave it
-  `False` unless the hardware-detection cell (cell 4) hard-stops with
-  "insufficient" and you specifically want a degraded, adapter-only run
-  instead of moving to bigger hardware.
+Всё, что дольше двух часов, здесь не запускается — VM ноутбука останавливается при
+простое. Для таких прогонов готовы конфиги [`jobs/*.yaml`](../jobs):
+GEPA (~7 ч на H5), OOF энкодера на 8192 токенах (~10 ч), FT судьи по пяти фолдам
+(~7.5 ч).
 
-### Hardware profiles (auto-detected in cell 4)
+---
 
-The notebook inspects GPU count, per-GPU VRAM, and CPU RAM, then picks one
-of four profiles — no manual selection needed, but you should provision
-hardware that lands you in one of the first three:
+## Обязательный смоук на logprobs
 
-| Profile | Requirement | Notes |
-|---|---|---|
-| `full_single` | 1 GPU, ≥ ~70GB VRAM (i.e. an 80GB A100/H100) | Whole model + 8-bit-AdamW optimizer states fit on one GPU; no DeepSpeed needed. A bare 48GB card is intentionally routed to offload instead — too tight for full 7B FT. |
-| `full_zero3_offload` (single-proc) | 1 GPU, ≥22GB and below the 70GB `full_single` threshold (e.g. 40–48GB A100/L4/L40), and ≥ ~60GB CPU RAM | DeepSpeed ZeRO-3 with CPU offload of optimizer + parameters; the notebook warns (but does not stop) if CPU RAM looks short. |
-| `full_zero3_offload` (multi-proc) | ≥ 2 GPUs (e.g. 2×T4) | Same DeepSpeed ZeRO-3 CPU-offload config, sharded across processes launched via `accelerate.notebook_launcher`. |
-| `insufficient` | A single GPU below the thresholds above | Hard stop (`RuntimeError`) unless `QLORA_FALLBACK=True` — full fine-tuning of a 7B model is not possible on that hardware. |
+`00_setup.ipynb` заканчивается прогоном на 5 кейсах с двумя ассертами:
+`prob_method == "logprobs"` у всех строк и разные значения `m3.p_faith`.
 
-DeepSpeed ZeRO-3 offload (cell 7) is configured with `bf16`, CPU-offloaded
-optimizer and parameter state, and `stage3_gather_16bit_weights_on_model_save`
-so the final saved checkpoint is a normal consolidated Hugging Face model
-rather than sharded ZeRO shards.
+Пропускать нельзя. Токенизатор vLLM отличается от того, что был у OpenRouter, а
+извлечение вердикта чувствительно к разбиению `PASS`/`FAIL` на подтокены: при
+односимвольном первом подтокене вероятность **молча** становится 0.5 для всех
+кейсов. Прогон на 2233 кейса при этом выглядит успешным, а сигнала в нём нет.
 
-### Pinned stack
+---
 
-Dependencies are floor-pinned (`>=`), not exact-pinned, with one deliberate
-exception: **`trl==1.8.0`** is pinned exactly because it is the version that
-supports `assistant_only_loss` in `SFTConfig` — completion-only loss masking
-that trains only on assistant-turn tokens. This mirrors the repo's MLX LoRA
-training recipe's `--mask-prompt` flag (see
-[docs/training.md](../docs/training.md)), keeping the loss-masking behavior
-consistent between the MLX/LoRA path and this full-FT path. The rest of the
-stack (`transformers`, `accelerate`, `datasets`, `peft`, `bitsandbytes`,
-`deepspeed`) is floor-pinned deliberately: Colab and Kaggle ship a
-preinstalled, CUDA-matched build of these libraries, and a floor pin lets
-that preinstalled build satisfy the requirement instead of being reinstalled
-against a mismatched CUDA toolkit.
+## Сплит
 
-### Evaluation caveat
+Разбиение читается из `data/splits/folds_alfa.json`. `split_samples` не вызывается
+ни в одном ноутбуке: он даёт стратифицированный, а не group-aware сплит, 24.9%
+тестовых строк делят вопрос с train, и полученные им числа несравнимы с числами на
+group-сплитах и завышены.
 
-The checkpoint this notebook produces is a plain Hugging Face full-fine-tune
-model (config + `safetensors`/`bin` weights + tokenizer files), evaluated
-**in-notebook** in cell 8: greedy generation over the held-out test split,
-parsed with the repo's own `parsing.parse_prediction`, and scored with the
-repo's own `metrics.evaluate_predictions`. That in-notebook cell is the
-**primary evaluation path** for this checkpoint.
+---
 
-The repo's `scripts/infer.py` is **not** a drop-in evaluator for this
-checkpoint: it loads models through `rag_reliability.mlx_backend`, i.e. the
-MLX runtime for Apple Silicon. Running this HF/CUDA checkpoint through
-`scripts/infer.py` as-is will not work — doing so would require a
-transformers-based backend equivalent (not part of this task). Cell 9 prints
-the `scripts/infer.py` / `scripts/evaluate.py` invocation for reference (and
-as a target for such a backend, if one is added later), but until that
-backend exists, treat cell 8's in-notebook evaluation as authoritative.
+## Full-FT ноутбуки Methods 1/2
 
-### Real data
+Раньше `qwen7b_full_finetune*.ipynb` были вычищены из launcher-контура: они
+клонировали ветку `qwen7b-notebook`, резали корпус через `split_samples` и
+держали обучение с оценкой в ячейках. Их роль для FT судьи по фолдам перешла к
+`30_finetune_judge.ipynb`.
 
-For a real run, produce `organizers.jsonl` with `scripts/prepare_data.py`,
-upload it to the runtime, and in cell 3 set `USE_REAL_DATA = True` and
-`REAL_DATA_PATH` to the uploaded file (on DataSphere, put it on the mounted
-storage). The split (80/10/10, stratified by `reliable`, seed 42) and every
-other cell stay the same. Defaults (`EPOCHS=3`, `LR=1e-5`, `MAX_SEQ_LEN=2048`)
-are reasonable starting points for full FT; a multi-hour run benefits from
-`SAVE_STRATEGY="epoch"` (resumable checkpoints — only enable it where the
-output disk has room for several ~15GB checkpoints).
+В `main` полный FT Methods 1/2 снова задокументирован отдельными ноутбуками —
+они лежат рядом; см. секцию ниже.
 
-### Output and getting the model out
+---
 
-Training writes to `OUTPUT_DIR` (needs ~2× the model size free, ~30GB for 7B),
-then cell 9 copies the checkpoint to the resolved `SAVE_TARGET` location (Drive
-/ `/kaggle/working` / local working dir) so it survives runtime disconnects.
+## Ссылки
 
-To download or reuse the ~15GB full model, the recommended path is the
-**Hugging Face Hub**: set `PUSH_TO_HUB=True`, `HUB_MODEL_ID`, and a write
-`HF_TOKEN` in cell 3; cell 9 then uploads `OUTPUT_DIR` to a private Hub repo,
-and you can load it anywhere with
-`AutoModelForCausalLM.from_pretrained(HUB_MODEL_ID)`. Alternatively download the
-checkpoint directory directly from the platform file manager.
+- [`docs/datasphere.md`](../docs/datasphere.md) — операционная памятка, чеклист,
+  типовые проблемы, пробелы в CLI.
+- [`docs/specs/90_DATASPHERE_runbook.md`](../docs/specs/90_DATASPHERE_runbook.md) —
+  полный runbook: конфигурации, раскладка хранилища, бюджеты прогонов.
 
-## Yandex DataSphere — extra setup (real full FT on A100 80GB)
+---
 
-**Shortcut:** if you only run on DataSphere, use the dedicated one-pass build
-[`qwen7b_full_finetune_datasphere.ipynb`](qwen7b_full_finetune_datasphere.ipynb)
-— it bakes in every fix below (driver-matched torch, numpy pin, storage paths,
-transformers-5 API, 8-bit AdamW). Edit the config block in its first cell
-(`BASE`, `MODE`, `USE_REAL_DATA`/`REAL_DATA_PATH`, `PUSH_TO_HUB`/`HUB_MODEL_ID`/
-`HF_TOKEN`) and **Run All** on a `g2.1` (A100 80 GB) config. The section below
-explains the same fixes for the general notebook.
+## Full fine-tune notebooks (Methods 1/2)
 
-DataSphere's `DS Default` image is older than the 2026 training stack and its
-project disk is tiny (~10 GB), so a run there needs three DataSphere-specific
-steps that Colab/Kaggle don't. This recipe is battle-tested for the `g2.1`
-config (1× A100 80 GB, 119 GB RAM).
+Из `main` снова лежат рядом с launcher-контуром:
 
-**1. Attach a large file storage.** The 10 GB project disk cannot hold the
-~15 GB model cache *and* the ~15 GB checkpoint. Create a File Storage
-(Ресурсы проекта → Файловое хранилище → **Активировать**), then **restart the
-compute VM** (stop the running instance — a kernel restart is not enough; the
-mount is injected only when a fresh VM starts). It appears at
-`/home/jupyter/filestore/<name>/`. Point both the HF cache and the output there.
+| Notebook | Role |
+|---|---|
+| [`qwen7b_full_finetune.ipynb`](qwen7b_full_finetune.ipynb) | Full FT Qwen2.5-7B (direct/marker) for Colab/Kaggle/DataSphere |
+| [`qwen7b_full_finetune_datasphere.ipynb`](qwen7b_full_finetune_datasphere.ipynb) | DataSphere-oriented variant of the same full-FT path |
+| [`eval_finetuned_datasphere.ipynb`](eval_finetuned_datasphere.ipynb) | Evaluate a saved full-FT checkpoint on DataSphere |
 
-**2. Install a driver-matched stack.** DataSphere's driver is CUDA 12.2, so the
-PyPI `torch` that `trl`/`transformers` would otherwise pull (CUDA 13) fails with
-"driver too old", and the base `torch` (2.0.1/cu118) is too old for `trl 1.8`.
-Pin `torch==2.5.1` on **cu121**. Also pin `numpy==1.26.4` **last** — new enough
-for `trl`'s typing, old enough (`<2`) to keep the base image's numpy-1-compiled
-C-extensions (`soxr`, `scipy`, `sklearn`, `numba`) ABI-compatible; numpy 2 breaks
-them. Run this as the first cell (replacing cell 1's installer), then
-**Restart Kernel**:
+Для корпусного FT судьи по фолдам в этом репозитории основной путь — всё ещё
+[`30_finetune_judge.ipynb`](30_finetune_judge.ipynb) + `jobs/ft_judge_fold*.yaml`.
+Подробности по full-FT ноутбукам Methods 1/2 — в
+[`docs/qwen7b_full_ft_results.md`](../docs/qwen7b_full_ft_results.md).
 
-```python
-import os, subprocess, sys
-BASE = "/home/jupyter/filestore/<name>"          # your mounted storage
-os.environ["HF_HOME"] = BASE + "/hf"              # model cache on the big disk
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-def pip(*a): subprocess.check_call([sys.executable, "-m", "pip", "install", *a])
-pip("torch==2.5.1", "torchvision==0.20.1", "torchaudio==2.5.1",
-    "--index-url", "https://download.pytorch.org/whl/cu121")
-pip("transformers>=4.56.2", "trl==1.8.0", "accelerate>=1.4.0", "datasets==4.7.0",
-    "peft>=0.8.0", "bitsandbytes>=0.44.1", "pydantic>=2.5", "sentencepiece", "psutil")
-pip("numpy==1.26.4")   # LAST — overrides any numpy 2 pulled above
-```
-
-`HF_HOME` and `PYTORCH_CUDA_ALLOC_CONF` reset on every kernel restart, so also
-set them at the very top of cell 1 (before any `transformers` import).
-
-**3. Point the output at the big disk and don't re-run cell 7 dirty.** In cell 3
-set `OUTPUT_DIR = f"{BASE}/ft_{MODE}"` (the default relative `ft_{MODE}` lands on
-the 10 GB disk and the ~15 GB save fails with `No space left on device`). In
-cell 7 set `save_strategy="no"` (per-epoch checkpoints include the optimizer
-state and blow the disk). Each cell-7 run leaks GPU memory, so **Restart Kernel
-before re-running cell 7** — otherwise the second run OOMs on an already-full
-80 GB GPU.
-
-Everything else (cells 2, 4–9) runs unchanged. `PLATFORM` auto-detects as
-`datasphere`, so cell 9 leaves the checkpoint in place on the mounted storage
-(no copy). Remember DataSphere billing: stop the VM and deactivate/delete the
-file storage when done.

@@ -129,9 +129,9 @@ def method_statuses(
             "artifact": "configs/few_shot.yaml",
         },
         "m3_gepa": {
-            "available": False,
-            "artifact": None,
-            "reason": "batch-only: requires an evolved prompt file",
+            "available": Path("configs/m3_gepa_prompt.txt").exists(),
+            "artifact": "configs/m3_gepa_prompt.txt",
+            "reason": "generate an evolved prompt with scripts/run_gepa.py",
         },
         "m3_openai": {
             "available": False,
@@ -143,16 +143,36 @@ def method_statuses(
             "artifact": None,
             "reason": "batch-only: requires OpenAI-compatible endpoint configuration",
         },
+        "m3_perchunk": {
+            "available": False,
+            "artifact": None,
+            "reason": "batch-only: one request per chunk needs an OpenAI-compatible endpoint",
+        },
+        "ft_judge": {
+            "available": False,
+            "artifact": None,
+            "reason": "batch-only: trains fold by fold via scripts/train_ft_judge.py",
+        },
         "m6_selfcheck": {
-    "available": False,
-    "artifact": None,
-    "reason": "batch-only: requires precomputed Method 6 feature JSONL",
-},
-"independent": {"available": True, "artifact": None},
-"independent_v2": {
-    "available": Path("results/independent_v2/model.joblib").exists(),
-    "artifact": "results/independent_v2/model.joblib",
-},
+            "available": False,
+            "artifact": None,
+            "reason": "batch-only: requires precomputed Method 6 feature JSONL",
+        },
+        "surface": {
+            "available": False,
+            "artifact": None,
+            "reason": "batch-only: out-of-fold scoring needs the whole corpus and folds.json",
+        },
+        "majority": {
+            "available": False,
+            "artifact": None,
+            "reason": "batch-only: out-of-fold scoring needs the whole corpus and folds.json",
+        },
+        "independent": {"available": True, "artifact": None},
+        "independent_v2": {
+            "available": Path("results/independent_v2/model.joblib").exists(),
+            "artifact": "results/independent_v2/model.joblib",
+        },
     }
 
 def method_choice_labels(statuses: dict[str, dict[str, Any]]) -> list[str]:

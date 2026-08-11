@@ -51,7 +51,7 @@ standard `Prediction` payload plus optional gold-label correctness.
 | `infer.py` | Same as the mlx baseline but loads a trained LoRA adapter (`--adapter-path`). Output format is identical, so `evaluate.py` works for both. |
 | `infer_lettucedetect.py` | Runs a trained LettuceDetect logistic-regression classifier and writes standard predictions. |
 | `evaluate.py` | Predictions + gold → metrics json. |
-| `run_benchmark.py` | Unified runner for dummy, prompt, LoRA, LettuceDetect, and encoder methods; every method is normalized to `Prediction` JSONL before evaluation. |
+| `run_benchmark.py` | Unified runner for dummy, prompt, LoRA, LettuceDetect, encoder, Method 3, and Method 6 methods; every method is normalized to `Prediction` JSONL before evaluation. |
 | `serve_demo.py` | Local Gradio UI for manually running one sample through a selected method. |
 | `train_direct_lora.py` / `train_marker_lora.py` | Prepare SFT splits and print the exact `mlx_lm.lora` command (they do not train themselves). |
 | `train_lettucedetect.py` | Extracts LettuceDetect features and trains the logistic-regression classifier. |
@@ -69,17 +69,25 @@ dataset and the official organizer `reason_*` markers.
   then the labels: `{"marker": "...", "faithfulness": 0|1, "relevance": 0|1}`.
   Hypothesis: forcing an error-type decision improves label quality and gives
   diagnosable failure categories for free.
-- **Method 3 — LettuceDetect features**: LettuceDetect produces token-level
+- **LettuceDetect baseline**: LettuceDetect produces token-level
   unsupported probabilities over the answer; `max`, `mean`, and fraction above
   threshold are fed into a multi-output logistic regression for faithfulness
   and relevance.
+- **Method 3 — LLM judge** (`m3_*`): a prompt judge with zero-shot, few-shot,
+  and GEPA-prompt modes. The OpenAI-compatible logprob variant turns PASS/FAIL
+  verdict token probabilities into faithfulness/relevance probabilities for
+  validation-fitted threshold evaluation.
+- **Method 6 — SelfCheck** (`m6_selfcheck`): generates answer samples, derives
+  NLI contradiction and semantic-entropy features (plus relevance), then maps
+  those features to labels with explicit thresholds in the Method 6 pipeline.
 
 ## Design decisions
 
 - **Conservative parsing.** An unparseable output counts as
   `faithfulness=0, relevance=0` and increments `invalid_output_rate`. A judge
   that produces garbage must not look reliable. This applies to prompt-based
-  methods; LettuceDetect writes structured `Prediction` objects directly.
+  methods; LettuceDetect and Method 6 write structured `Prediction` objects
+  directly.
 - **Chat template symmetry.** Both training (`mlx_lm` `CompletionsDataset`
   applies the tokenizer chat template to prompt/completion pairs) and
   inference (`apply_chat_template` in the scripts) wrap prompts identically —

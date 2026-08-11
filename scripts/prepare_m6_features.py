@@ -19,10 +19,18 @@ def build_feature_rows(
     nli,
     embedder,
     entail_threshold: float,
+    use_n_samples: int | None = None,
 ) -> list[dict]:
     rows = []
     for sample in tqdm(samples, desc="m6/features"):
         generated_samples = load_sample_cache(samples_dir, sample.id)
+        if use_n_samples is not None:
+            if len(generated_samples) < use_n_samples:
+                raise ValueError(
+                    f"{sample.id}: cache has {len(generated_samples)} samples, "
+                    f"need {use_n_samples}"
+                )
+            generated_samples = generated_samples[:use_n_samples]
         rows.append(
             build_feature_row(
                 sample,
@@ -46,6 +54,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--embed-model", default="intfloat/multilingual-e5-large")
     parser.add_argument("--entail-threshold", type=float, default=0.5)
+    parser.add_argument("--use-n-samples", type=int, default=None)
     parser.add_argument("--limit", type=int, default=None)
     return parser.parse_args()
 
@@ -68,6 +77,7 @@ def main() -> None:
         nli=nli,
         embedder=embedder,
         entail_threshold=args.entail_threshold,
+        use_n_samples=args.use_n_samples,
     )
     save_jsonl(rows, args.output)
     print(f"Wrote {len(rows)} Method 6 feature rows to {args.output}")

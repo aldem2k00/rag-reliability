@@ -100,14 +100,22 @@ def test_build_method_commands_for_m3_and_m6(tmp_path: Path) -> None:
         output_dir=tmp_path,
         python="python",
         m6_features="results/m6/features.jsonl",
+        m6_backend="dummy",
+        m6_samples_dir="results/m6/test-samples",
+        m6_n_samples=3,
     )
 
     assert m3.run_command[0:2] == ["python", "scripts/run_m3.py"]
     assert "--backend" in m3.run_command
     assert "dummy" in m3.run_command
-    assert m6.run_command[0:2] == ["python", "scripts/run_m6_selfcheck.py"]
+    assert m6.run_command[0:2] == ["python", "scripts/run_m6_pipeline.py"]
+    assert "--samples-dir" in m6.run_command
+    assert "results/m6/test-samples" in m6.run_command
     assert "--features" in m6.run_command
     assert "results/m6/features.jsonl" in m6.run_command
+    assert "--backend" in m6.run_command
+    assert "--n-samples" in m6.run_command
+    assert "3" in m6.run_command
 
 
 def test_build_method_commands_for_m3_few_shot_and_gepa(tmp_path: Path) -> None:
@@ -202,3 +210,33 @@ def test_build_method_run_passes_limit_to_runner_and_evaluator(tmp_path: Path) -
     assert "25" in run.run_command
     assert "--limit" in run.evaluate_command
     assert "25" in run.evaluate_command
+
+
+def test_m3_backend_accepts_openai_judge(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["run_benchmark.py", "--m3-backend", "openai_judge"])
+
+    args = run_benchmark.parse_args()
+
+    assert args.m3_backend == "openai_judge"
+
+
+def test_m6_pipeline_cli_options(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_benchmark.py",
+            "--m6-backend",
+            "openai",
+            "--m6-samples-dir",
+            "cache/m6",
+            "--m6-n-samples",
+            "7",
+        ],
+    )
+
+    args = run_benchmark.parse_args()
+
+    assert args.m6_backend == "openai"
+    assert args.m6_samples_dir == "cache/m6"
+    assert args.m6_n_samples == 7

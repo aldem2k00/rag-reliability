@@ -1,0 +1,58 @@
+method:
+  name: m6_grounding
+  version: contract-833e9627c3ad
+  family: m6
+  mode: null
+  score_keys:
+  - m6.max_entail
+  - m6.min_entail
+  - m6.mean_entail
+  - m6.mean_contra
+  - m6.max_contra
+  - m6.frac_unsupported
+  - m6.n_sentences
+  - m6.chunk_spread
+  - m6.n_conditions
+  - m6.cond_coverage
+  - m6.digit_coverage
+  - m6.uncovered_max
+  default_score_expr: m6.min_entail
+  corpus_wide: true
+variant: rumodernbert
+config:
+  auc_only: 'False'
+  auc_report: None
+  backend: real
+  batch_size: '64'
+  bootstrap_b: '10000'
+  data: data/alfa.jsonl
+  device: None
+  entail_threshold: '0.5'
+  flush_every: '20'
+  limit: None
+  max_length: '512'
+  nli_model: Feudor2/rumodernbert-nli
+  nli_pairs: '51763'
+  nli_windows: '56401'
+  output: predictions/alfa/m6_grounding/rumodernbert/scores.jsonl
+  overlap: '128'
+  resolved_device: cuda
+  resolved_dtype: torch.float16
+  resume: 'True'
+  run_yaml: None
+  scores: None
+  seed: '0'
+  shuffle: 'False'
+  subsample: None
+  variant: rumodernbert
+git:
+  hash: d03b00d
+  dirty: true
+  changed:
+  - predictions/alfa/m6_grounding/base/run.yaml
+  - predictions/alfa/m6_grounding/base/scores.jsonl
+  - predictions/alfa/m6_grounding/rumodernbert/scores.jsonl
+seed: 0
+n: 2233
+partial: false
+timestamp: '2026-07-26T14:31:33+00:00'

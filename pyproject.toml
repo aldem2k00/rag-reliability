@@ -14,12 +14,18 @@ dependencies = [
     "tqdm>=4.66",
     "numpy>=1.26",
     "typer>=0.12,<1",
+    # Русская сентенизация Метода 6 (grounding): чистый Python, без GPU и весов.
+    # В core, а не в extras "m6": features.py импортируется в CPU-тестах и в score.py.
+    "razdel>=0.5",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.4",
+    # Верхняя граница обязательна: ruff 0.16 расширил набор правил по умолчанию,
+    # и `make check` краснеет 119 ошибками на неизменённом коде. Поднимать границу —
+    # только вместе с разбором нового набора правил.
+    "ruff>=0.4,<0.15",
     "mypy>=1.8",
 ]
 mlx = [
@@ -46,6 +52,16 @@ m6 = [
     "transformers>=4.40,<5",
     "sentence-transformers>=3.0",
 ]
+ft = [
+    # Дообучение судьи (scripts/train_ft_judge.py). Отдельным extra, а не в
+    # encoder: там энкодер на 150M, здесь LoRA поверх 7B, и bitsandbytes
+    # ставится только под CUDA.
+    "torch>=2.2",
+    "transformers>=4.44,<5",
+    "peft>=0.11",
+    "accelerate>=0.33",
+    "bitsandbytes>=0.43; platform_system == 'Linux'",
+]
 cloud = [
     "openai>=1.0",
 ]
@@ -65,11 +81,14 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: полный корпус вместо синтетики; включается RUN_SLOW_TESTS=1",
+]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["from_organizators"]
+extend-exclude = ["from_organizators", "notebooks"]
 
 [tool.mypy]
 python_version = "3.11"

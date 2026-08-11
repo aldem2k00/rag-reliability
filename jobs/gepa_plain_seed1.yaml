@@ -1,0 +1,31 @@
+name: gepa-h5-plain-seed1
+desc: >-
+  GEPA prompt evolution, вариант plain, сид 1. ~1.2 ч на прогон;
+  H5 целиком (3 сида x 2 варианта) — ~7 ч, поэтому только через Jobs.
+
+# vLLM поднимает само задание: JupyterLab тут нет, а --api-base смотрит в localhost.
+cmd: >-
+  bash jobs/_with_vllm.sh
+  python scripts/run_gepa.py
+  --mode evolve --axis faithfulness
+  --variant plain --seed 1 --auto medium
+  --data data/alfa.jsonl --folds data/splits/folds_alfa.json
+  --model Qwen/Qwen2.5-7B-Instruct --api-base http://localhost:8000/v1
+  --output-dir artifacts/gepa/plain_seed1
+
+env:
+  python:
+    version: "3.11"
+    pip-file: jobs/requirements.txt
+    root-paths:
+      - src/
+      - scripts/
+
+inputs:
+  - data/
+  - configs/
+
+outputs:
+  - artifacts/gepa/plain_seed1/
+
+cloud-instance-type: g2.1

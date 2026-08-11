@@ -1,0 +1,118 @@
+{
+  "axes": {
+    "faithfulness_f1_macro": {
+      "above_noise": true,
+      "ci95": [
+        0.5203210335759766,
+        0.5737329002010175
+      ],
+      "null_percentile": 100.0,
+      "value": 0.5471671883019638
+    },
+    "relevance_f1_macro": {
+      "above_noise": false,
+      "ci95": [
+        0.48769095077764285,
+        0.5415665617924676
+      ],
+      "null_percentile": 89.4,
+      "value": 0.5140136904667238
+    }
+  },
+  "comparisons": [],
+  "diagnostics": {
+    "bootstrap_B": 10000,
+    "degenerate": {
+      "const_share": 0.6662162162162162,
+      "is_degenerate": false,
+      "output_entropy": 1.3844152950587212
+    },
+    "grid_step": 0.01,
+    "invalid_output_rate": 0.0,
+    "mean_per_repeat_f1": 0.5122097378277154,
+    "null_aggregation": "mean of per-repeat OOF macro-F1 (nullcal contract)",
+    "null_trials": 500,
+    "operating_threshold": 0.05,
+    "per_repeat_f1": [
+      0.5122097378277154,
+      0.5122097378277154,
+      0.5122097378277154,
+      0.5122097378277154,
+      0.5122097378277154
+    ],
+    "primary_aggregation": "single macro-F1 over the glued OOF decision",
+    "sd_across_repeats": 0.0,
+    "seed": 0,
+    "threshold_sd": 6.938893903907228e-18,
+    "thresholds_per_fold": [
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05
+    ]
+  },
+  "method": "baselines",
+  "operational": {
+    "base_rate_unreliable": 0.275,
+    "confusion": {
+      "fn": 309,
+      "fp": 230,
+      "tn": 843,
+      "tp": 98
+    },
+    "flagged_share": 0.22162162162162163,
+    "lift": 1.0396553219362323,
+    "pr_auc_unreliable": 0.2859052135324639,
+    "recall_at_precision": {
+      "0.5": 0.014742014742014743,
+      "0.6": 0.0,
+      "0.7": 0.0
+    },
+    "roc_auc": 0.5203899146117226
+  },
+  "primary": {
+    "above_noise": false,
+    "ci95": [
+      0.4865799680248246,
+      0.5381550497537346
+    ],
+    "null_percentile": 87.6,
+    "value": 0.5122097378277154
+  },
+  "protocol": {
+    "corpus": "data/alfa.jsonl",
+    "corpus_sha256": "c386cd4e342463381ec74d4b6dd3539a22ea9eaae769fd1b2c910d4ca12f95b5",
+    "folds": "data/splits/folds_alfa.json",
+    "folds_sha256": "22e766097fa2551f6009ebbb1c3fbfd740ee201eb243c1b7ac19730e5ee3b69c",
+    "n_corpus": 2233,
+    "n_evaluated": 1480,
+    "n_excluded": 753,
+    "n_folds": 5,
+    "n_repeats": 5,
+    "score_expr": "ind.faith_score * ind.rel_score",
+    "scores": "predictions/alfa/baselines/independent/scores.jsonl"
+  },
+  "schema_version": 1,
+  "variant": "independent"
+}

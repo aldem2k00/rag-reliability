@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,10 @@ Messages = list[dict[str, str]]
 Choice = dict[str, Any]
 
 _IMPORT_HINT = 'Install OpenAI-compatible backend deps with: uv pip install -e ".[cloud]"'
+EXTRACTOR_VERSION = 2
+_JUDGE_TEMPERATURE = 0.0
+_JUDGE_TOP_P = 1.0
+logger = logging.getLogger(__name__)
 
 
 def _choices_from_response(resp: Any, logprobs: bool) -> list[Choice]:
@@ -32,7 +37,11 @@ def _choices_from_response(resp: Any, logprobs: bool) -> list[Choice]:
         raise RuntimeError("provider returned choices=None (request parameters unsupported)")
     out: list[Choice] = []
     for ch in resp.choices:
-        item: Choice = {"text": ch.message.content or "", "tokens": []}
+        item: Choice = {
+            "text": ch.message.content or "",
+            "tokens": [],
+            "finish_reason": ch.finish_reason,
+        }
         if logprobs and ch.logprobs and ch.logprobs.content:
             for t in ch.logprobs.content:
                 item["tokens"].append(
@@ -46,17 +55,27 @@ def _choices_from_response(resp: Any, logprobs: bool) -> list[Choice]:
     return out
 
 
-def _judge_verdict(text: str, tokens: list[dict]) -> tuple[float, float, dict]:
+def _judge_verdict(
+    text: str,
+    tokens: list[dict],
+    *,
+    finish_reason: str | None = None,
+) -> tuple[float, float, dict]:
     """Fallback chain logprobs -> regex -> default; returns (p_faith, p_rel, meta)."""
+    meta = {
+        "raw": text[-400:],
+        "truncated": finish_reason == "length",
+        "extractor_version": EXTRACTOR_VERSION,
+    }
     probs = extract_verdict_probs(tokens)
     if probs is not None:
-        return probs[0], probs[1], {"method": "logprobs", "raw": text[-400:]}
+        return probs[0], probs[1], {"method": "logprobs", **meta}
     parsed = parse_m3_prediction(text, sample_id="_")
     if not parsed.invalid_output:
         p_f = 0.9 if parsed.faithfulness_pred == 1 else 0.1
         p_r = 0.9 if parsed.relevance_pred == 1 else 0.1
-        return p_f, p_r, {"method": "regex", "raw": text[-400:]}
-    return 0.5, 0.5, {"method": "default", "raw": text[-400:]}
+        return p_f, p_r, {"method": "regex", **meta}
+    return 0.5, 0.5, {"method": "default", **meta}
 
 
 class LLMClient:
@@ -81,7 +100,7 @@ class LLMClient:
         # Lazy: constructing the client must not require the optional openai dep.
         if self._client is None:
             try:
-                from openai import OpenAI  # noqa: PLC0415
+                from openai import OpenAI
             except ImportError as exc:
                 raise ImportError(_IMPORT_HINT) from exc
             self._client = OpenAI(base_url=self.api_base, api_key=self.api_key)
@@ -162,28 +181,59 @@ class LLMClient:
         return choices[:n]
 
 
-def _cache_path(cache_dir: Path, model: str, system: str, user: str) -> Path:
+def _cache_path(
+    cache_dir: Path,
+    model: str,
+    system: str,
+    user: str,
+    max_tokens: int,
+    temperature: float,
+    top_p: float,
+    api_base: str,
+    extractor_version: int,
+) -> Path:
     """Shared sync/async cache key."""
-    key = hashlib.sha256("\x00".join((model, system, user)).encode("utf-8")).hexdigest()
+    payload = {
+        "api_base": api_base,
+        "extractor_version": extractor_version,
+        "max_tokens": max_tokens,
+        "model": model,
+        "system": system,
+        "temperature": temperature,
+        "top_p": top_p,
+        "user": user,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    key = hashlib.sha256(encoded).hexdigest()
     return cache_dir / f"{key}.json"
 
 
-def _cache_read(cp: Path | None) -> tuple[float, float, dict] | None:
+def _cache_read(cp: Path | None) -> Choice | None:
     if cp is None or not cp.exists():
         return None
     try:
         d = json.loads(cp.read_text(encoding="utf-8"))
-        return d["p_faith"], d["p_rel"], d["meta"]
-    except (json.JSONDecodeError, KeyError):
+        text, tokens, finish_reason = d["text"], d["tokens"], d["finish_reason"]
+        if not isinstance(text, str) or not isinstance(tokens, list):
+            return None
+        return {"text": text, "tokens": tokens, "finish_reason": finish_reason}
+    except (json.JSONDecodeError, KeyError, TypeError):
         return None  # truncated/corrupted cache entry counts as a miss
 
 
-def _cache_write(cp: Path | None, p_f: float, p_r: float, meta: dict) -> None:
+def _cache_write(cp: Path | None, choice: Choice) -> None:
     if cp is None:
         return
     tmp = cp.with_suffix(".json.tmp")
     tmp.write_text(
-        json.dumps({"p_faith": p_f, "p_rel": p_r, "meta": meta}, ensure_ascii=False),
+        json.dumps(
+            {
+                "text": choice["text"],
+                "tokens": choice["tokens"],
+                "finish_reason": choice["finish_reason"],
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     tmp.replace(cp)  # atomic replace — an interrupt cannot leave a broken entry
@@ -198,29 +248,54 @@ class JudgeClient(LLMClient):
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def _chat_judge(self, system: str, user: str, max_tokens: int) -> tuple[str, list]:
+    def _chat_judge(self, system: str, user: str, max_tokens: int) -> Choice:
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         try:
-            choices = self.chat(msgs, temperature=0.0, max_tokens=max_tokens, logprobs=True)
-        except RuntimeError:
+            choices = self.chat(
+                msgs,
+                temperature=_JUDGE_TEMPERATURE,
+                max_tokens=max_tokens,
+                top_p=_JUDGE_TOP_P,
+                logprobs=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — HTTP clients use provider-specific errors
             # provider cannot do logprobs — degrade to plain text (regex path)
-            choices = self.chat(msgs, temperature=0.0, max_tokens=max_tokens, logprobs=False)
-        return choices[0]["text"], choices[0]["tokens"]
+            logger.warning("Logprobs unavailable; falling back to text verdicts: %s", exc)
+            choices = self.chat(
+                msgs,
+                temperature=_JUDGE_TEMPERATURE,
+                max_tokens=max_tokens,
+                top_p=_JUDGE_TOP_P,
+                logprobs=False,
+            )
+        return choices[0]
 
-    def judge(self, system: str, user: str, max_tokens: int = 400) -> tuple[float, float, dict]:
+    def judge(self, system: str, user: str, max_tokens: int = 800) -> tuple[float, float, dict]:
         """-> (p_faith, p_rel, meta). A sample is never lost (fallback to 0.5/0.5)."""
         cp = (
-            _cache_path(self.cache_dir, self.model, system, user)
+            _cache_path(
+                self.cache_dir,
+                self.model,
+                system,
+                user,
+                max_tokens,
+                _JUDGE_TEMPERATURE,
+                _JUDGE_TOP_P,
+                self.api_base,
+                EXTRACTOR_VERSION,
+            )
             if self.cache_dir is not None
             else None
         )
-        cached = _cache_read(cp)
-        if cached is not None:
-            return cached
-        text, tokens = self._chat_judge(system, user, max_tokens)
-        p_f, p_r, meta = _judge_verdict(text, tokens)
-        _cache_write(cp, p_f, p_r, meta)
-        return p_f, p_r, meta
+        choice = _cache_read(cp)
+        if choice is None:
+            choice = self._chat_judge(system, user, max_tokens)
+            _cache_write(cp, choice)
+        return _judge_verdict(
+            choice["text"],
+            choice["tokens"],
+            finish_reason=choice["finish_reason"],
+        )
 
 
 class AsyncLLMClient:
@@ -244,7 +319,7 @@ class AsyncLLMClient:
     def client(self) -> Any:
         if self._client is None:
             try:
-                from openai import AsyncOpenAI  # noqa: PLC0415
+                from openai import AsyncOpenAI
             except ImportError as exc:
                 raise ImportError(_IMPORT_HINT) from exc
             self._client = AsyncOpenAI(base_url=self.api_base, api_key=self.api_key)
@@ -336,42 +411,65 @@ class AsyncJudgeClient(AsyncLLMClient):
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    async def _chat_judge_async(self, system: str, user: str, max_tokens: int) -> tuple[str, list]:
+    async def _chat_judge_async(self, system: str, user: str, max_tokens: int) -> Choice:
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         try:
-            choices = await self.chat(msgs, temperature=0.0, max_tokens=max_tokens, logprobs=True)
-        except RuntimeError:
             choices = await self.chat(
-                msgs, temperature=0.0, max_tokens=max_tokens, logprobs=False
+                msgs,
+                temperature=_JUDGE_TEMPERATURE,
+                max_tokens=max_tokens,
+                top_p=_JUDGE_TOP_P,
+                logprobs=True,
             )
-        return choices[0]["text"], choices[0]["tokens"]
+        except Exception as exc:  # noqa: BLE001 — HTTP clients use provider-specific errors
+            logger.warning("Logprobs unavailable; falling back to text verdicts: %s", exc)
+            choices = await self.chat(
+                msgs,
+                temperature=_JUDGE_TEMPERATURE,
+                max_tokens=max_tokens,
+                top_p=_JUDGE_TOP_P,
+                logprobs=False,
+            )
+        return choices[0]
 
     async def judge_one(
         self,
         system: str,
         user: str,
         sem: asyncio.Semaphore,
-        max_tokens: int = 400,
+        max_tokens: int = 800,
     ) -> tuple[float, float, dict]:
         cp = (
-            _cache_path(self.cache_dir, self.model, system, user)
+            _cache_path(
+                self.cache_dir,
+                self.model,
+                system,
+                user,
+                max_tokens,
+                _JUDGE_TEMPERATURE,
+                _JUDGE_TOP_P,
+                self.api_base,
+                EXTRACTOR_VERSION,
+            )
             if self.cache_dir is not None
             else None
         )
-        cached = _cache_read(cp)
-        if cached is not None:
-            return cached
-        async with sem:
-            text, tokens = await self._chat_judge_async(system, user, max_tokens)
-        p_f, p_r, meta = _judge_verdict(text, tokens)
-        _cache_write(cp, p_f, p_r, meta)
-        return p_f, p_r, meta
+        choice = _cache_read(cp)
+        if choice is None:
+            async with sem:
+                choice = await self._chat_judge_async(system, user, max_tokens)
+            _cache_write(cp, choice)
+        return _judge_verdict(
+            choice["text"],
+            choice["tokens"],
+            finish_reason=choice["finish_reason"],
+        )
 
     async def judge_many(
         self,
         system: str,
         users: list[str],
-        max_tokens: int = 400,
+        max_tokens: int = 800,
     ) -> list[tuple[float, float, dict]]:
         """Batch judging; input order preserved."""
         sem = asyncio.Semaphore(self.concurrency)  # bound to the current event loop

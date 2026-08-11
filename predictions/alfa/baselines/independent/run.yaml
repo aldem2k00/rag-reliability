@@ -1,0 +1,46 @@
+method:
+  name: independent
+  version: contract-598eaa7e9226
+  family: independent
+  mode: null
+  score_keys:
+  - ind.faith_score
+  - ind.rel_score
+  default_score_expr: ind.faith_score * ind.rel_score
+  corpus_wide: true
+variant: independent
+config:
+  data: data/alfa.jsonl
+  direct_adapter_path: results/adapters_direct
+  flush_every: '20'
+  independent_faithfulness_threshold: '0.2'
+  independent_relevance_threshold: '0.1'
+  lettucedetect_model: results/lettucedetect/classifier.joblib
+  limit: None
+  m3_api_base: http://localhost:8000/v1
+  m3_api_key_env: OPENAI_API_KEY
+  m3_backend: mlx
+  m3_cache_dir: results/m3/cache
+  m3_dummy_strategy: always_reliable
+  m3_examples: configs/few_shot.yaml
+  m3_max_context_chars: None
+  m3_max_tokens: '400'
+  m3_prompt_file: configs/m3_gepa_prompt.txt
+  marker_adapter_path: results/adapters_marker
+  max_tokens: '64'
+  method: independent
+  model: mlx-community/Qwen2.5-1.5B-Instruct-4bit
+  output: predictions/alfa/baselines/independent/scores.jsonl
+  resume: 'False'
+  run_yaml: None
+  seed: '0'
+  variant: independent
+git:
+  hash: 739887c
+  dirty: true
+  changed:
+  - predictions/alfa/baselines/independent/scores.jsonl
+seed: 0
+n: 2233
+partial: false
+timestamp: '2026-07-25T23:29:41+00:00'

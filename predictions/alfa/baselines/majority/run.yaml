@@ -1,0 +1,43 @@
+method:
+  name: majority
+  version: contract-d98164dec367
+  family: surface
+  mode: null
+  score_keys:
+  - surf.p_faith
+  - surf.p_rel
+  default_score_expr: null
+  corpus_wide: true
+variant: majority
+config:
+  data: data/alfa.jsonl
+  folds: data/splits/folds_alfa.json
+  limit: None
+  output: predictions/alfa/baselines/majority/scores.jsonl
+  run_yaml: None
+  seed: '0'
+  variant: majority
+git:
+  hash: f1c5ace
+  dirty: true
+  changed:
+  - predictions/alfa/baselines/majority/scores.jsonl
+  - predictions/alfa/baselines/surface/run.yaml
+  - predictions/alfa/baselines/surface/scores.jsonl
+  - tests/test_protocol_regression.py
+  - predictions/alfa/baselines/majority/scores_legacy.jsonl
+  - predictions/alfa/baselines/surface/scores_legacy.jsonl
+  - predictions/alfa/baselines/surface_e5/scores_legacy.jsonl
+  - predictions/alfa/m3/few_shot/scores_legacy.jsonl
+  - predictions/alfa/m3/zero_shot/scores_legacy.jsonl
+seed: 0
+n: 1480
+partial: true
+timestamp: '2026-07-25T23:16:24+00:00'
+coverage:
+  corpus_n: 2233
+  scored_n: 1480
+  excluded_n: 753
+  reason: cases outside data/splits/folds.json (oversized groups) cannot be scored
+    OOF
+  corpus_sha256: c386cd4e342463381ec74d4b6dd3539a22ea9eaae769fd1b2c910d4ca12f95b5

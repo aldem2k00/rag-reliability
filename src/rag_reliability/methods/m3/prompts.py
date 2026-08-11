@@ -74,7 +74,14 @@ def build_system_prompt(
     if mode == "gepa":
         if prompt_file is None:
             raise ValueError("gepa mode requires prompt_file")
-        return Path(prompt_file).read_text(encoding="utf-8")
+        path = Path(prompt_file)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"GEPA prompt file not found: {path}. Generate one with scripts/run_gepa.py "
+                "(results/gepa/m3_optimized_prompt_<variant>_seed<seed>.txt) or use the "
+                "committed configs/m3_gepa_prompt.txt"
+            )
+        return path.read_text(encoding="utf-8").strip()
     raise ValueError(f"Unknown Method 3 mode: {mode}")
 
 

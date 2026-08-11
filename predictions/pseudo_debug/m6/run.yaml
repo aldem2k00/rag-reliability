@@ -1,0 +1,53 @@
+config:
+  profile: cloud
+  llm:
+    api_base: https://openrouter.ai/api/v1
+    api_key: '***'
+    model: qwen/qwen-2.5-7b-instruct
+    reflection_model: qwen/qwen-2.5-72b-instruct
+    reflection_api_base: https://openrouter.ai/api/v1
+    max_ctx_chars: 24000
+    openrouter_extra_body:
+      provider:
+        require_parameters: true
+        allow_fallbacks: false
+        order:
+        - Phala
+  data:
+    train: data/processed/pseudo_dev_train.jsonl
+    val: data/processed/pseudo_dev_val.jsonl
+    test: data/processed/pseudo_dev_test.jsonl
+  m3:
+    mode: zero_shot
+    gepa_auto: light
+    gepa_train_size: 50
+    use_marker_feedback: true
+    seed: 0
+    out_prompt: artifacts/cloud/m3_optimized_prompt.txt
+    out_pred_dir: predictions/cloud/m3
+    judge_cache: artifacts/cloud/m3_judge_cache
+  m6:
+    n_samples: 5
+    temperature: 0.8
+    top_p: 0.95
+    max_new_tokens: 512
+    nli_model: MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7
+    embed_model: intfloat/multilingual-e5-large
+    samples_cache: artifacts/cloud/m6_samples
+    features_cache: artifacts/cloud/m6_features
+    out_pred_dir: predictions/cloud/m6
+    entail_threshold: 0.5
+  pseudo:
+    gen_model: qwen/qwen-2.5-7b-instruct
+    n: 300
+    seed: 42
+    source: sberquad
+    cache: artifacts/pseudo_gen
+    out_dir: data/processed
+git_hash: 79a90066d882e9793810d85a5215ec2eb8e6f290
+profile: cloud
+split: all
+limit: 20
+method: m6
+partial: true
+n: 60

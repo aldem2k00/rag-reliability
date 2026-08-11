@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 from rag_reliability.methods import registry
 
 _SPEC = importlib.util.spec_from_file_location(
@@ -105,6 +107,24 @@ def test_method_statuses_marks_encoder_available_when_checkpoint_exists(tmp_path
     statuses = serve_demo.method_statuses(encoder_checkpoint=str(tmp_path))
 
     assert statuses["encoder"]["available"] is True
+
+
+def test_method_statuses_marks_gepa_available_only_when_prompt_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    missing = serve_demo.method_statuses()["m3_gepa"]
+
+    assert missing["available"] is False
+    assert missing["artifact"] == "configs/m3_gepa_prompt.txt"
+    assert "run_gepa" in missing["reason"]
+
+    prompt_file = tmp_path / "configs" / "m3_gepa_prompt.txt"
+    prompt_file.parent.mkdir()
+    prompt_file.write_text("optimized prompt", encoding="utf-8")
+
+    assert serve_demo.method_statuses()["m3_gepa"]["available"] is True
 
 
 def test_method_choice_labels_show_availability() -> None:

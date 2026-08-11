@@ -77,13 +77,29 @@ def eval(  # noqa: A001 - CLI verb
     predictions: Path = typer.Option(..., help="Predictions JSONL to score."),
     output: Path = typer.Option(..., help="Where to write metrics.json."),
     limit: int | None = typer.Option(None, help="Score only the first N samples."),
+    val_data: Path | None = typer.Option(None, help="Val dataset to fit thresholds on."),
+    val_predictions: Path | None = typer.Option(None, help="Val predictions with probs."),
+    grid_step: float = typer.Option(0.01, help="Threshold grid step."),
 ) -> None:
+    if (val_data is None) != (val_predictions is None):
+        raise typer.BadParameter("--val-data and --val-predictions must be given together")
     command = [
         sys.executable, "scripts/evaluate.py",
         "--data", str(data), "--predictions", str(predictions), "--output", str(output),
     ]
     if limit is not None:
         command.extend(["--limit", str(limit)])
+    if val_data is not None and val_predictions is not None:
+        command.extend(
+            [
+                "--val-data",
+                str(val_data),
+                "--val-predictions",
+                str(val_predictions),
+                "--grid-step",
+                str(grid_step),
+            ]
+        )
     subprocess.run(command, check=True)
 
 
@@ -102,7 +118,12 @@ def list_methods() -> None:
     for spec in registry.METHODS.values():
         requires = ", ".join(spec.requires) if spec.requires else "-"
         demo = "demo" if spec.demo_runner else "batch-only"
-        typer.echo(f"{spec.name:16} {spec.family:14} {demo:10} requires: {requires}")
+        scope = "corpus-wide" if spec.corpus_wide else "split-only"
+        scores = ", ".join(spec.score_keys) if spec.score_keys else "-"
+        typer.echo(
+            f"{spec.name:16} {spec.family:14} {demo:10} {scope:12} "
+            f"scores: {scores:44} requires: {requires}"
+        )
 
 
 if __name__ == "__main__":

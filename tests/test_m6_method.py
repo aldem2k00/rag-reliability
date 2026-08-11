@@ -18,6 +18,17 @@ from rag_reliability.methods.m6.predict import prediction_from_features
 from rag_reliability.schema import RagSample
 
 
+def make_sample(sample_id: str) -> RagSample:
+    return RagSample(
+        id=sample_id,
+        question="q",
+        context="c",
+        answer="a",
+        faithfulness=1,
+        relevance=1,
+    )
+
+
 class StubNLI:
     def __init__(self, table):
         self.table = table
@@ -72,7 +83,8 @@ def test_entropy_features_known_distribution() -> None:
     assert output["answer_in_top_cluster"] == 1.0
 
 
-def test_prediction_from_features_thresholds() -> None:
+def test_prediction_does_not_binarize() -> None:
+    """Метод отдаёт скоры; решение принимает протокол порогом с train-фолда."""
     sample = RagSample(
         id="s1",
         question="q",
@@ -91,9 +103,101 @@ def test_prediction_from_features_thresholds() -> None:
         },
     )
 
-    assert prediction.faithfulness_pred == 1
-    assert prediction.relevance_pred == 1
+    assert prediction.faithfulness_pred == 0
+    assert prediction.relevance_pred == 0
     assert prediction.invalid_output is False
+    assert prediction.scores == {
+        "m6.contra_mean": pytest.approx(0.2),
+        "m6.entropy": pytest.approx(0.3),
+        "m6.cos_q_a": pytest.approx(0.8),
+    }
+
+
+def test_missing_feature_raises_instead_of_defaulting() -> None:
+    """Битая строка фич не имеет права выглядеть идеально надёжным кейсом."""
+    sample = make_sample("s1")
+
+    with pytest.raises(KeyError, match="cos_q_a"):
+        prediction_from_features(sample, {"selfcheck_contra_mean": 0.2, "semantic_entropy": 0.3})
+
+
+def test_non_numeric_feature_raises() -> None:
+    sample = make_sample("s1")
+
+    with pytest.raises(TypeError, match="semantic_entropy"):
+        prediction_from_features(
+            sample,
+            {"selfcheck_contra_mean": 0.2, "semantic_entropy": "низкая", "cos_q_a": 0.8},
+        )
+
+
+def test_previously_unused_features_reach_the_artifact() -> None:
+    """contra_max / n_clusters / answer_in_top_cluster: задействованы, а не выброшены."""
+    sample = make_sample("s1")
+
+    prediction = prediction_from_features(
+        sample,
+        {
+            "selfcheck_contra_mean": 0.2,
+            "selfcheck_contra_max": 0.6,
+            "semantic_entropy": 0.3,
+            "n_clusters": 3,
+            "answer_in_top_cluster": 1.0,
+            "cos_q_a": 0.8,
+        },
+    )
+
+    assert prediction.scores["m6.contra_max"] == pytest.approx(0.6)
+    assert prediction.scores["m6.n_clusters"] == pytest.approx(3.0)
+    assert prediction.scores["m6.answer_in_top_cluster"] == pytest.approx(1.0)
+
+
+def test_threshold_arguments_are_deprecated_and_ignored() -> None:
+    """Пороги остались только ради чужих скриптов и ни на что не влияют."""
+    sample = make_sample("s1")
+    features = {"selfcheck_contra_mean": 0.9, "semantic_entropy": 5.0, "cos_q_a": 0.01}
+
+    with pytest.warns(DeprecationWarning, match="no longer binarizes"):
+        prediction = prediction_from_features(
+            sample,
+            features,
+            contradiction_threshold=0.5,
+            entropy_threshold=1.0,
+            relevance_threshold=0.25,
+        )
+
+    assert prediction.faithfulness_pred == 0
+    assert prediction.relevance_pred == 0
+
+
+def test_prediction_emits_probabilities() -> None:
+    sample = make_sample("x")
+    features = {"selfcheck_contra_mean": 0.3, "semantic_entropy": 0.2, "cos_q_a": 0.8}
+
+    pred = prediction_from_features(sample, features)
+
+    assert pred.faithfulness_prob == pytest.approx(0.7)
+    assert pred.relevance_prob == pytest.approx(0.8)
+    assert pred.prob_method == "m6_features"
+
+
+def test_probabilities_clipped_to_unit_interval() -> None:
+    sample = make_sample("x")
+    features = {"selfcheck_contra_mean": 1.4, "semantic_entropy": 0.0, "cos_q_a": -0.2}
+
+    pred = prediction_from_features(sample, features)
+
+    assert pred.faithfulness_prob == 0.0
+    assert pred.relevance_prob == 0.0
+
+
+def test_binary_fields_stay_zero() -> None:
+    sample = make_sample("x")
+    features = {"selfcheck_contra_mean": 0.3, "semantic_entropy": 0.2, "cos_q_a": 0.8}
+
+    pred = prediction_from_features(sample, features)
+
+    assert pred.faithfulness_pred == 0 and pred.relevance_pred == 0
 
 
 def test_load_sample_cache_reads_cached_generation(tmp_path) -> None:

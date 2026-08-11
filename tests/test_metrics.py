@@ -1,9 +1,20 @@
 """Tests for evaluation metrics."""
 
+from __future__ import annotations
+
+import csv
+import hashlib
+import json
+from pathlib import Path
+from zipfile import ZipFile
+
+import numpy as np
 import pytest
 
-from rag_reliability.metrics import evaluate_predictions
+from rag_reliability.metrics import degenerate_rate, evaluate_predictions, operational_metrics
 from rag_reliability.schema import Prediction, RagSample
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def make_sample(
@@ -195,3 +206,61 @@ def test_marker_pred_missing_falls_back_to_unknown() -> None:
         "hallucination": {"hallucination": 1},
         "contradiction": {"unknown": 1},
     }
+
+
+def test_degenerate_rate_marks_constant_positive_predictions() -> None:
+    predictions = [make_prediction(str(index), 1, 1) for index in range(100)]
+
+    result = degenerate_rate(predictions)
+
+    assert result["const_share"] == 1.0
+    assert result["output_entropy"] == 0.0
+    assert result["is_degenerate"] is True
+
+
+def test_operational_metrics_majority_has_zero_recall_at_target_precision() -> None:
+    y_true = np.array([1, 1, 1, 0])
+    reliable_scores = np.full(len(y_true), 0.75)
+
+    result = operational_metrics(y_true, reliable_scores, threshold=0.5)
+
+    assert result["recall_at_precision"] == {0.5: 0.0, 0.6: 0.0, 0.7: 0.0}
+    assert result["flagged_share"] == 0.0
+    assert result["confusion"] == {"tn": 3, "fp": 0, "fn": 1, "tp": 0}
+
+
+def test_surface_operational_lift_regression() -> None:
+    with (
+        ZipFile(ROOT / "from_organizators/data/data.zip") as archive,
+        archive.open("data.csv") as raw,
+    ):
+        source_rows = list(csv.DictReader(line.decode("utf-8-sig") for line in raw))
+
+    labels: dict[str, int] = {}
+    for row in source_rows:
+        digest = hashlib.sha1(
+            (row["full_dialog"] + "\0" + row["answer"]).encode("utf-8")
+        ).hexdigest()
+        sample_id = f"alfa_{digest[:12]}"
+        faith = int(row["binary_faithfulness"].strip().lower() in {"true", "1"})
+        relevance = int(row["binary_relevancy"].strip().lower() in {"true", "1"})
+        labels[sample_id] = faith & relevance
+
+    artifact_path = ROOT / "predictions/alfa/baselines/surface/test.jsonl"
+    artifact_rows = [
+        json.loads(line)
+        for line in artifact_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    report = json.loads(
+        artifact_path.with_name("report_test.json").read_text(encoding="utf-8")
+    )
+    y_true = np.array([labels[row["id"]] for row in artifact_rows], dtype=int)
+    scores = np.array(
+        [row["p_faith"] * row["p_rel"] for row in artifact_rows], dtype=float
+    )
+    threshold = report["t_faith"] * report["t_rel"]
+
+    result = operational_metrics(y_true, scores, threshold)
+
+    assert result["lift"] == pytest.approx(1.56, abs=0.05)

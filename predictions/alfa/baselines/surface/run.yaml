@@ -1,0 +1,50 @@
+method:
+  name: surface
+  version: contract-b13774c3d037
+  family: surface
+  mode: null
+  score_keys:
+  - surf.len_answer
+  - surf.len_ctx
+  - surf.len_query
+  - surf.n_chunks
+  - surf.overlap_ans_ctx_1
+  - surf.overlap_ans_ctx_2
+  - surf.overlap_ans_q_1
+  - surf.digit_match_ratio
+  - surf.url_or_nav_ratio
+  - surf.p_faith
+  - surf.p_rel
+  default_score_expr: surf.p_faith * surf.p_rel
+  corpus_wide: true
+variant: surface
+config:
+  data: data/alfa.jsonl
+  folds: data/splits/folds_alfa.json
+  limit: None
+  output: predictions/alfa/baselines/surface/scores.jsonl
+  run_yaml: None
+  seed: '0'
+  variant: surface
+git:
+  hash: f1c5ace
+  dirty: true
+  changed:
+  - predictions/alfa/baselines/surface/scores.jsonl
+  - tests/test_protocol_regression.py
+  - predictions/alfa/baselines/majority/scores_legacy.jsonl
+  - predictions/alfa/baselines/surface/scores_legacy.jsonl
+  - predictions/alfa/baselines/surface_e5/scores_legacy.jsonl
+  - predictions/alfa/m3/few_shot/scores_legacy.jsonl
+  - predictions/alfa/m3/zero_shot/scores_legacy.jsonl
+seed: 0
+n: 1480
+partial: true
+timestamp: '2026-07-25T23:16:22+00:00'
+coverage:
+  corpus_n: 2233
+  scored_n: 1480
+  excluded_n: 753
+  reason: cases outside data/splits/folds.json (oversized groups) cannot be scored
+    OOF
+  corpus_sha256: c386cd4e342463381ec74d4b6dd3539a22ea9eaae769fd1b2c910d4ca12f95b5

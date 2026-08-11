@@ -1,0 +1,32 @@
+name: encoder-oof-8192
+desc: >-
+  Энкодер, 5-fold OOF на 8192 токенах. ~10 ч — самая длинная позиция роадмапа,
+  через ноутбук не запускается: VM останавливается при простое.
+
+# Сплит приходит из folds.json; split_samples не вызывается нигде в этом контуре.
+cmd: >-
+  python scripts/train_encoder_baseline.py
+  --variant len8192_lr2e-5
+  --data data/alfa.jsonl --folds data/splits/folds_alfa.json
+  --max-length 8192 --batch-size 1 --grad-accum 8
+  --epochs 3 --learning-rate 2e-5 --pos-weight-mode balanced
+  --output-dir results/encoder_checkpoints/len8192_lr2e-5
+  --predictions-output predictions/alfa/encoder/len8192_lr2e-5/scores.jsonl
+
+env:
+  python:
+    version: "3.11"
+    pip-file: jobs/requirements.txt
+    root-paths:
+      - src/
+      - scripts/
+
+inputs:
+  - data/
+  - configs/
+
+outputs:
+  - predictions/alfa/encoder/len8192_lr2e-5/
+  - results/encoder_checkpoints/len8192_lr2e-5/
+
+cloud-instance-type: g2.1

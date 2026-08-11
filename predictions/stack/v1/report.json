@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "method": "stack",
+  "variant": "v1",
+  "protocol": {
+    "data": "data/alfa.jsonl",
+    "data_sha256": "c386cd4e342463381ec74d4b6dd3539a22ea9eaae769fd1b2c910d4ca12f95b5",
+    "folds": "data/splits/folds_alfa.json",
+    "folds_sha256": "22e766097fa2551f6009ebbb1c3fbfd740ee201eb243c1b7ac19730e5ee3b69c",
+    "n_folds": 5,
+    "n_repeats": 5,
+    "grid_step": 0.01
+  },
+  "primary": {
+    "value": 0.6543385156937518,
+    "ci95": [
+      0.5955845883989597,
+      0.7096545357614767
+    ],
+    "null_percentile": 100.0,
+    "above_noise": true
+  },
+  "axes": {
+    "roc_auc": {
+      "value": 0.6127705627705627,
+      "ci95": [
+        0.5371066225034995,
+        0.6845096484271742
+      ]
+    }
+  },
+  "diagnostics": {
+    "per_repeat_f1": [
+      0.6361218482924926,
+      0.643950171761685,
+      0.6387120247407677,
+      0.646570841889117,
+      0.6623138135074474
+    ],
+    "sd_across_repeats": 0.009168136563130353,
+    "n_evaluated": 331,
+    "n_excluded_by_folds": 115,
+    "bootstrap_B": 10000,
+    "null_trials": 500
+  },
+  "ablation": [
+    {
+      "configuration": "surface (base)",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5791238007166801,
+        "ci95": [
+          0.5222006360094207,
+          0.634776851861582
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5792640692640693,
+        "ci95": [
+          0.5090644781094417,
+          0.6496126112418866
+        ]
+      },
+      "sd_across_repeats": 0.019399175261414308,
+      "n": 331,
+      "delta_to_base": null
+    },
+    {
+      "configuration": "+ m3.p_faith",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m3.p_faith"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.6543385156937518,
+        "ci95": [
+          0.5955845883989597,
+          0.7096545357614767
+        ]
+      },
+      "roc_auc": {
+        "value": 0.6127705627705627,
+        "ci95": [
+          0.5371066225034995,
+          0.6845096484271742
+        ]
+      },
+      "sd_across_repeats": 0.009168136563130353,
+      "n": 331,
+      "delta_to_base": {
+        "value": 0.07521471497707166,
+        "ci95": [
+          0.015816039738556328,
+          0.1344440953717222
+        ],
+        "p": 0.013
+      }
+    },
+    {
+      "configuration": "+ enc.logit",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "enc.logit"
+      ],
+      "status": "unavailable",
+      "reason": "source artifact is absent",
+      "macro_f1": null,
+      "roc_auc": null,
+      "sd_across_repeats": null,
+      "n": null,
+      "delta_to_base": null
+    },
+    {
+      "configuration": "+ ld.max_unsup",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "ld.max_unsup"
+      ],
+      "status": "unavailable",
+      "reason": "source artifact is absent",
+      "macro_f1": null,
+      "roc_auc": null,
+      "sd_across_repeats": null,
+      "n": null,
+      "delta_to_base": null
+    },
+    {
+      "configuration": "all",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m3.p_faith"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.6543385156937518,
+        "ci95": [
+          0.5955845883989597,
+          0.7096545357614767
+        ]
+      },
+      "roc_auc": {
+        "value": 0.6127705627705627,
+        "ci95": [
+          0.5371066225034995,
+          0.6845096484271742
+        ]
+      },
+      "sd_across_repeats": 0.009168136563130353,
+      "n": 331,
+      "delta_to_base": {
+        "value": 0.07521471497707166,
+        "ci95": [
+          0.015816039738556328,
+          0.1344440953717222
+        ],
+        "p": 0.013
+      }
+    },
+    {
+      "configuration": "all - m3.p_faith",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5791238007166801,
+        "ci95": [
+          0.5222006360094207,
+          0.634776851861582
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5792640692640693,
+        "ci95": [
+          0.5090644781094417,
+          0.6496126112418866
+        ]
+      },
+      "sd_across_repeats": 0.019399175261414308,
+      "n": 331,
+      "delta_to_base": {
+        "value": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ],
+        "p": 1.0
+      }
+    },
+    {
+      "configuration": "+ m3.p_rel (diagnostic)",
+      "features": [
+        "surf.p_faith",
+        "surf.p_rel",
+        "m3.p_rel"
+      ],
+      "status": "evaluated",
+      "macro_f1": {
+        "value": 0.5675937631689845,
+        "ci95": [
+          0.510753057692362,
+          0.6227899757969111
+        ]
+      },
+      "roc_auc": {
+        "value": 0.5631168831168831,
+        "ci95": [
+          0.49316428685526476,
+          0.6343019682620719
+        ]
+      },
+      "sd_across_repeats": 0.022737254768857133,
+      "n": 331,
+      "delta_to_base": {
+        "value": -0.01153003754769566,
+        "ci95": [
+          -0.03439844645200521,
+          0.01019579704985494
+        ],
+        "p": 0.338
+      }
+    }
+  ],
+  "selection_rule": "include iff lower bound of paired 95% CI for macro-F1 increment > 0",
+  "final_features": [
+    "surf.p_faith",
+    "surf.p_rel",
+    "m3.p_faith"
+  ],
+  "m3_p_rel_contributes": false
+}
