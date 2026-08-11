@@ -12,6 +12,7 @@ ENCODER_POS_WEIGHT_MODE ?= none
 .PHONY: help install install-mlx install-lettucedetect install-m6 install-cloud install-gepa test lint check dummy \
         install-encoder baseline-direct baseline-marker encoder-baseline train-direct \
         train-marker train-lettucedetect infer-direct infer-marker infer-lettucedetect \
+        analyze-judges \
         install-demo serve-demo benchmark-dummy eval-all clean
 
 help: ## List available targets
@@ -125,6 +126,12 @@ benchmark-dummy: ## Unified benchmark smoke test with dummy methods
 
 eval-all: ## Print every metrics json in results/
 	@for f in results/*_metrics.json; do echo "== $$f"; cat "$$f"; done
+
+analyze-judges: ## Recompute every Methods 1-2 article figure from prediction artifacts
+	$(PY) scripts/analyze_prompted_judges.py \
+		--data data/organizers.jsonl \
+		--direct results/organizers_qwen_direct_predictions.jsonl \
+		--marker results/organizers_qwen_marker_predictions.jsonl
 
 clean: ## Remove tool caches and build artifacts (keeps results/)
 	rm -rf .pytest_cache .ruff_cache .mypy_cache \

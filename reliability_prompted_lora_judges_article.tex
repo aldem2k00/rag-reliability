@@ -1,0 +1,1335 @@
+% =====================================================================
+% Draft article: Methods 1-2 only -- prompted and fine-tuned generative
+% judges (direct and marker-conditioned) for RAG reliability.
+% Build from this directory: pdflatex reliability_prompted_lora_judges_article.tex
+% Run pdflatex twice for stable references.
+% NOTE: zapiski.cls is not vendored in this repository; obtain it from
+% github.com/madrugado/template-zapiski before building.
+% =====================================================================
+\documentclass{zapiski}
+\originfo{529}{}{}{2026}
+\setcounter{page}{1}
+\date{}
+
+\usepackage[cp1251]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian,english]{babel}
+\usepackage{times}
+\usepackage{url}
+\usepackage{latexsym}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{cite}
+\usepackage{float}
+
+\newcommand{\fmacro}{\mathrm{F1}_{\mathrm{macro}}}
+\renewcommand{\UrlFont}{\ttfamily\small}
+
+\english
+
+\begin{document}
+
+\title[Prompted and Fine-Tuned RAG Judges]{Prompted and Fine-Tuned Generative
+Judges for RAG Reliability: Axis Collapse, Error-Seeking Bias, and the Limits
+of Marker Conditioning}
+
+\author[Team~14\_1]{\text{Aleksandr Demchuk}}
+\author[Team~14\_1]{\text{Murad Rezvan}}
+\author[Team~14\_1]{\text{Sergey Natalenko}}
+\author[Team~14\_1]{\text{Warda Tariq}}
+
+\begin{abstract}
+We study generative LLM-as-judge methods for automatic reliability assessment
+of a Russian-language banking retrieval-augmented generation (RAG) system. A
+response is reliable if it is both faithful to the retrieved chunks and
+relevant to the client dialogue. Two prompt contracts are compared: a
+\emph{direct} judge that emits the two binary labels as JSON, and a
+\emph{marker-conditioned} judge that first names an error type from a
+21-label taxonomy and then emits the same labels. Each contract is evaluated
+zero-shot on Qwen2.5-1.5B-Instruct, after LoRA adaptation of the same model,
+and after full supervised fine-tuning of Qwen2.5-7B-Instruct. On the canonical
+1,796/224/225 split the always-reliable floor is 0.4186 reliability macro-F1.
+The zero-shot direct judge reaches 0.4701, a difference of $+0.0515$ whose
+paired bootstrap interval [$-0.0124$, $0.1140$] includes zero; the
+marker-conditioned judge reaches 0.3513 and is the only variant tested here
+that is \emph{significantly worse than the trivial baseline}
+($\Delta=-0.0673$, [$-0.1190$, $-0.0182$], $p=0.004$), and the only method in
+the project whose reported score falls below that baseline at all. We localize three
+mechanisms. First, \emph{axis collapse}: the prompted judge emits identical
+values on both axes in 99.87\% of rows while the gold labels disagree on
+16.70\%, so the two-axis contract is not realized at all. Second, an
+\emph{error-seeking bias} rather than the PASS bias reported for larger
+judges: the direct judge flags 57.2\% of the corpus as unreliable against a
+27.7\% base rate, and its PASS verdict leaves 23.3\% unreliable answers in the
+approved set. Third, marker conditioning multiplies the error-seeking bias
+(89.1\% flagged) while 27.8\% of its marker strings fall outside the closed
+vocabulary that the prompt states, so the marker macro-F1 of 0.0123 confounds
+taxonomy incompetence with format non-compliance. Balancing the supervised
+training set is the only lever that helps: full fine-tuning of the 7B model
+with a balanced train split reaches 0.586 reliability macro-F1, the best score
+obtained on this split by any method in the project, while marker
+fine-tuning stays at 0.485 with marker macro-F1 of 0.079.
+\end{abstract}
+
+\keywords{RAG evaluation \and hallucination detection \and LLM-as-judge
+\and faithfulness \and answer relevance \and LoRA \and supervised
+fine-tuning.}
+
+\maketitle
+
+% =====================================================================
+\section{Introduction}
+\label{sec:introduction}
+
+A retrieval-augmented generation system conditions a language model on
+documents fetched from a curated knowledge base. Retrieval reduces unsupported
+generation but guarantees neither that every statement follows from the
+evidence nor that the answer addresses what the client actually asked. In a
+banking deployment both failure modes carry regulatory and reputational cost,
+and the quality gate must run locally because the inputs contain client data.
+
+We consider two binary axes. Faithfulness indicates that the answer is
+supported by the retrieved chunks, without mixing facts across chunks and
+without dropping essential conditions. Relevance indicates that the answer
+addresses the latest client request in the dialogue. The final target is
+\begin{equation}
+ y_{\mathrm{reliable}} = y_{\mathrm{faithful}} \land y_{\mathrm{relevant}},
+ \label{eq:reliability}
+\end{equation}
+and the primary metric is macro-averaged F1 on this derived label.
+
+This article restricts the comparison to the \emph{generative judge} family:
+methods in which a decoder-only instruction model reads
+$(\mathrm{dialogue}, \mathrm{context}, \mathrm{answer})$ and writes the labels
+as text. Encoder-based alternatives on the same data and the same split are
+reported separately. Within the generative family we cross two independent
+design choices:
+
+\begin{itemize}
+ \item \textbf{Prompt contract} --- \emph{direct} (Method 1), where the model
+ returns only the two binary labels, versus \emph{marker} (Method 2), where
+ the model first names an error type from the annotator taxonomy and then
+ returns the labels, following the rationale-as-intermediate-target scheme
+ of~\cite{hsieh2023distilling}. The hypothesis is that forcing an explicit
+ error-type decision improves label quality and yields diagnosable failure
+ categories for free.
+ \item \textbf{Adaptation regime} --- zero-shot prompting, parameter-efficient
+ LoRA adaptation~\cite{hu2021lora} of a 4-bit 1.5B model in the style
+ of~\cite{dettmers2023qlora}, and full supervised fine-tuning of a 7B model.
+\end{itemize}
+
+Our contributions are:
+\begin{enumerate}
+ \item a held-out evaluation of both prompt contracts across all three
+ adaptation regimes on the canonical organizer split, with paired stratified
+ bootstrap intervals for every comparison that has per-row predictions;
+ \item the identification of \emph{axis collapse} --- the prompted judge
+ emits one verdict twice rather than two independent judgements --- and a
+ quantification of how much of the two-axis contract it forfeits;
+ \item a characterization of the prompted judge's failure as an
+ \emph{error-seeking bias}, the opposite of the PASS bias usually reported for
+ larger judges, together with the decision-theoretic consequence that its PASS
+ verdict is close to uninformative;
+ \item a decomposition of the marker-mode failure into a taxonomy component
+ and a format-compliance component, with 27.8\% out-of-vocabulary marker
+ strings, and the corresponding named fix;
+ \item a documented negative result on LoRA at 1.5B, including a
+ previously unreported train/inference distribution mismatch: 61.9\% of rows
+ lose text to the SFT length caps while inference runs on untruncated text;
+ \item confirmation that train-set balancing, not model scale or learning
+ rate, is the lever that moves this task, with the 7B balanced direct judge
+ reaching 0.586 reliability macro-F1.
+\end{enumerate}
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+Industrial RAG-evaluation frameworks such as RAGAS~\cite{es2023ragas}
+formalize faithfulness and answer relevance and delegate both to an external
+LLM judge. The reliability of that delegation is itself contested:
+\cite{zheng2023judging} document position, verbosity and self-enhancement
+biases in LLM judges and show that judge agreement with human annotators
+degrades sharply outside the domains the judge was aligned on.
+Lynx~\cite{ravi2024lynx} demonstrates that a fine-tuned open judge can surpass
+a frontier API judge on hallucination detection, which motivates our
+supervised branches; its HaluBench evaluation also shows how strongly judge
+quality depends on language and domain, which is the regime we are in.
+
+Using an error type as an intermediate generation target follows distilling
+step-by-step~\cite{hsieh2023distilling}, where rationales supervise a smaller
+student in addition to the label. Our Method 2 is the cheapest possible
+instance of that idea: the rationale is a single categorical token sequence
+drawn from the annotator taxonomy. A recurring practical obstacle for such
+schemes is that free-form decoding does not respect a closed label set;
+schema-guided or grammar-constrained decoding~\cite{willard2023efficient}
+removes exactly that failure, and our marker analysis quantifies how much of
+the observed damage it would prevent.
+
+On the supervised side, LoRA~\cite{hu2021lora} and its quantized
+variant~\cite{dettmers2023qlora} make judge fine-tuning feasible on consumer
+hardware, and we use the Qwen2.5 instruction models~\cite{qwen2024qwen25} as
+the base for every generative variant. RAGTruth~\cite{niu2024ragtruth}
+provides the reference point for what token-level hallucination supervision
+looks like when it is available; in our corpus it is not, which is why the
+marker channel is the only rationale signal we can train on and why its
+density matters so much.
+
+% =====================================================================
+\section{Data and Evaluation Protocol}
+\label{sec:data}
+
+\subsection{Corpus and Split}
+
+The organizer corpus contains 2,245 production RAG cases. Every case carries
+the full client dialogue, up to eight retrieved knowledge chunks, the bot
+answer, two binary labels, and an optional list of annotator error markers.
+Reliability is not stored; it is derived by Eq.~\ref{eq:reliability}. We use
+the repository's stratified seed-42 split
+(\texttt{dataset.split\_samples}, 80/10/10) throughout, which yields
+1,796 / 224 / 225 rows.
+
+Table~\ref{tab:joint-labels} reports the \emph{joint} label distribution
+rather than the two marginals, because the joint structure is what the
+two-axis prediction contract has to reproduce and what the axis-collapse
+analysis in Section~\ref{sec:results-collapse} depends on.
+
+\begin{table}[H]
+\centering
+\caption{Joint distribution of the two gold axes on the canonical seed-42
+split. $F$ denotes faithfulness and $R$ relevance; the reliable class is the
+$(1,1)$ cell.}
+\label{tab:joint-labels}
+\begin{tabular}{lrrrrrr}
+\toprule
+Split & Rows & $(0,0)$ & $(0,1)$ & $(1,0)$ & $(1,1)$ & $F \neq R$ \\
+\midrule
+Train      & 1,796 & 194 & 279 & 25 & 1,298 & 304 \\
+Validation &   224 &  27 &  34 &  1 &   162 &  35 \\
+Test       &   225 &  27 &  35 &  1 &   162 &  36 \\
+\midrule
+Full       & 2,245 & 248 & 348 & 27 & 1,622 & 375 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two properties of Table~\ref{tab:joint-labels} govern everything that follows.
+
+First, the axes genuinely disagree on 375 rows, 16.70\% of the corpus. A judge
+that emits one verdict for both axes therefore forfeits, by construction, any
+credit on one sixth of the data. This is the quantity that
+Section~\ref{sec:results-collapse} measures against.
+
+Second, the split is stratified on the \emph{reliable} label only, not on the
+joint pair. The 27 rows in the rare $(F{=}1, R{=}0)$ cell consequently land
+25 / 1 / 1 rather than the 21 / 3 / 3 that joint stratification would give.
+Validation and test each contain exactly one faithful-but-irrelevant row, so
+on those splits the reliable label differs from the faithfulness label in a
+single row. Per-axis relevance metrics on validation and test are computed
+against a nearly degenerate contingency and should be read as such; this is a
+protocol limitation of the shared split, not of any method evaluated on it.
+
+The always-reliable baseline is 0.4186 reliability macro-F1 on the 225-row
+test split, because 162 of 225 rows are reliable. On the full 2,245-row corpus
+the same trivial predictor scores 0.4194. The two floors differ because the
+populations differ; comparisons that mix them are not meaningful, and
+Section~\ref{sec:protocols} states which of our own numbers belong to which
+population.
+
+\subsection{Marker Annotations}
+\label{sec:data-markers}
+
+The taxonomy is a closed set of 13 organizer \texttt{reason\_*} labels; the
+repository schema additionally admits six legacy compact error labels and the
+two sentinels \texttt{none} and \texttt{unknown}, giving 21 admissible strings
+in total. Marker annotation is sparse and its provenance needs care
+(Table~\ref{tab:marker-provenance}), because two different counts of it
+circulate in our own project documents.
+
+\begin{table}[H]
+\centering
+\caption{Marker annotation provenance. Occurrences exceed annotated rows
+because 32 rows carry more than one marker; the conversion pipeline keeps only
+the first marker per row and overwrites the marker of any gold-reliable row
+with \texttt{none}.}
+\label{tab:marker-provenance}
+\footnotesize
+\begin{tabular}{lr}
+\toprule
+Quantity & Count \\
+\midrule
+Rows with at least one annotated marker (raw corpus)          & 158 \\
+\quad of which gold-reliable, marker discarded by conversion  &  18 \\
+\quad of which gold-unreliable, first marker retained         & 140 \\
+Total marker occurrences across all positions                 & 200 \\
+Rows carrying more than one marker                            &  32 \\
+\midrule
+Usable explicit-marker rows after conversion                  & 140 \\
+\quad as a fraction of the 2,245-row corpus                   & 6.24\% \\
+\quad as a fraction of the 623 unreliable rows                & 22.47\% \\
+\midrule
+Explicit-marker rows in train / validation / test             & 106 / 14 / 20 \\
+Distinct marker classes in train / validation / test          & 12 / 6 / 9 \\
+Taxonomy classes with at least one usable row                 & 12 of 13 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three consequences follow. The 158-row figure and the 22\% figure quoted in
+our team's overview report describe different populations and are both
+correct only under that reading: 158 rows are annotated, but only 140 survive
+conversion, and it is the 140 that give 22.47\% of unreliable cases. The
+18 discarded rows are an annotation inconsistency in the corpus --- an error
+marker attached to a row that both binary labels call reliable --- silently
+resolved in favour of the binary labels. Finally, the test split contains 20
+explicit-marker rows spread over 9 classes, roughly two rows per class, so
+marker macro-F1 on the test split is not estimable to any useful precision
+and we report it only as a floor-level indicator.
+
+\subsection{Protocols and Evidence Tiers}
+\label{sec:protocols}
+
+Two evaluation populations appear in this article and are never mixed within
+a table.
+
+\textbf{Canonical test split (225 rows).} The primary protocol. Every headline
+number is on this population.
+
+\textbf{Full corpus (2,245 rows).} Reported for zero-shot variants only, where
+it is legitimate because no training occurs and there is no split to leak
+across. It is the population our team's overview report quoted for Methods 1
+and 2, and we reproduce it so those numbers remain traceable. It is
+\emph{not} used for LoRA or fine-tuned variants.
+
+Evidence quality is also not uniform across variants, and the tables label it
+explicitly:
+
+\begin{itemize}
+ \item \textbf{measured} --- per-row predictions are on disk, so confusion
+ matrices, per-class scores, per-marker breakdowns and paired bootstrap
+ intervals are all computed directly. This covers both zero-shot variants.
+ \item \textbf{derived} --- per-row predictions were not persisted, but the
+ reported macro-F1 values together with the reported prediction counts
+ determine the confusion matrix uniquely. This covers the LoRA variants; the
+ reconstruction and its internal consistency check are in
+ Appendix~\ref{sec:appendix-lora}. The LoRA adapter weights are no longer on
+ disk, so these rows are permanently derived rather than merely
+ not-yet-measured.
+ \item \textbf{reported} --- only aggregate macro-F1 from the training run is
+ available, rounded to three decimals. This covers the 7B full fine-tuning
+ variants. These rows carry \emph{no} uncertainty estimate and no
+ diagnostics, and no statistical claim in this article rests on them.
+\end{itemize}
+
+\subsection{Metrics and Uncertainty}
+
+We report macro-F1 for faithfulness, relevance and the derived reliability
+label. Generative judges produce hard verdicts, not probabilities, so no
+threshold is fitted anywhere in this article --- an important asymmetry with
+the encoder methods evaluated on the same split, and one we return to in
+Section~\ref{sec:discussion}.
+
+Sampling uncertainty is estimated with 10,000 paired stratified bootstrap
+replicates (seed 42), resampling separately within the reliable and unreliable
+strata so that every replicate preserves the original class counts. All
+compared systems are evaluated on the same resampled indices. Because the
+strata sizes are held fixed, the always-reliable baseline is constant at
+0.4186 across replicates, which turns any comparison against it into a clean
+one-sample test.
+
+% =====================================================================
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Prediction Contract and Parsing}
+\label{sec:contract}
+
+Every variant implements one contract: given
+$(\mathrm{dialogue}, \mathrm{context}, \mathrm{answer})$ it returns
+$\hat{y}_{\mathrm{faithful}}, \hat{y}_{\mathrm{relevant}} \in \{0,1\}$, plus a
+marker string in marker mode. Raw model text is converted by a three-stage
+fallback: balanced-brace JSON extraction, then a field-level regular
+expression, then a conservative default of $(0,0)$ with an
+\texttt{invalid\_output} flag. The conservative default is deliberate --- a
+judge that emits garbage must not be scored as if it had approved the answer.
+
+The context is assembled by concatenating the non-empty retrieved chunks under
+explicit \texttt{[CHUNK $i$]} headers, so chunk boundaries are visible to the
+model. This matters for the \texttt{reason\_chunk\_fact\_mixup} error class,
+which is only detectable if the boundaries survive into the prompt.
+
+\subsection{Method 1: Direct Judge}
+\label{sec:m1}
+
+The direct prompt states the task, gives one-sentence definitions of both
+axes, instructs the model to evaluate relevance against the latest client
+request when the question field contains a full dialogue, and requires the
+output
+\begin{center}
+\texttt{\{"faithfulness": 0 or 1, "relevance": 0 or 1\}}
+\end{center}
+and nothing else. Instructions are in English while the payload is Russian;
+instruction-following on Qwen2.5 is more reliable in English, and the axis
+definitions are the only part of the prompt that must be followed literally.
+
+\subsection{Method 2: Marker-Conditioned Judge}
+\label{sec:m2}
+
+The marker prompt is identical except that it additionally lists the 21
+admissible marker strings, instructs the model to choose exactly one,
+reserves \texttt{none} for answers that are both faithful and relevant and
+\texttt{unknown} for unreliable answers that fit no other class, and requires
+\begin{center}
+\texttt{\{"marker": "...", "faithfulness": 0 or 1, "relevance": 0 or 1\}}
+\end{center}
+with the marker field \emph{first}, so that the error-type decision is
+generated before the binary labels and can condition them. Decoding is
+unconstrained: the closed vocabulary is stated in the prompt but not enforced
+at the sampler, which is the design decision that
+Section~\ref{sec:results-markers} shows to be load-bearing.
+
+\subsection{Zero-Shot Inference}
+\label{sec:zeroshot}
+
+Both prompts are run against
+\texttt{mlx-community/Qwen2.5-1.5B-Instruct-4bit} through the MLX backend,
+wrapped as a single user turn in the tokenizer chat template, decoded greedily
+with a 64-token budget. No context truncation is applied at inference: on the
+training split the median direct prompt is 8,356 characters and the longest is
+19,112, and every prompt in the corpus fits the model context window. The same chat-template wrapper is used at
+training time, so the train and inference prompt shapes agree.
+
+\subsection{LoRA Adaptation of the 1.5B Model}
+\label{sec:lora}
+
+Supervised targets are the gold labels serialized in exactly the output format
+the prompt requests, so the SFT objective and the inference contract coincide.
+Loss is masked to completion tokens only (\texttt{-{}-mask-prompt}): the judge
+prompt is roughly fifty times longer than the JSON completion, and without
+masking the gradient optimizes prompt reconstruction instead of label
+prediction.
+
+Adapters are trained with \texttt{mlx\_lm.lora}: rank 8, scale 20, dropout 0,
+last 16 layers, batch size 1 with 8 gradient-accumulation steps, learning rate
+$1\cdot10^{-4}$, \texttt{max\_seq\_length} 4096, 3,592 iterations for two
+epochs over the 1,796 training rows. Sequence length was reached by
+elimination: 2,048 truncates the assistant target away on long rows and
+training reports \texttt{nan} loss, while 8,192 exhausts Apple Metal memory
+near iteration 40 at approximately 29\,GB peak.
+
+To keep prompts inside 4,096 tokens the SFT record builder caps the dialogue
+at 2,000 characters and the context at 5,000 characters. This cap is the
+source of a distribution mismatch that we quantify in
+Appendix~\ref{sec:appendix-truncation} and that has not been reported before:
+the caps are applied when writing the training, validation and SFT test
+records, but the held-out evaluation file is written from the
+\emph{untruncated} samples, and the inference command consumes that
+untruncated file. The adapter is therefore trained on a systematically shorter
+input distribution than the one it is tested on.
+
+A second configuration balances the SFT training set: the four
+$(\mathrm{faithfulness}, \mathrm{relevance})$ label pairs are resampled
+deterministically to 256 rows each, giving 1,024 training rows, with
+validation and test untouched. This isolates the effect of the label prior
+from every other factor.
+
+\subsection{Full Fine-Tuning of the 7B Model}
+\label{sec:fullft}
+
+The same two prompt contracts are used to fully fine-tune
+\texttt{Qwen2.5-7B-Instruct} with the TRL \texttt{SFTTrainer} on a single
+A100-80GB: bf16, gradient checkpointing, 8-bit AdamW,
+\texttt{assistant\_only\_loss} enabled (the transformers-side equivalent of
+the MLX prompt masking), two epochs, maximum sequence length 2,048, learning
+rate $1\cdot10^{-5}$. Four variants were trained: direct, direct with a
+balanced train split, marker, and direct-balanced at learning rate
+$3\cdot10^{-5}$. Balancing here oversamples the rare label pairs up to the
+majority pair size rather than downsampling to a fixed 256, so it differs from
+the 1.5B balanced run in construction while sharing its intent. Evaluation
+uses greedy decoding and the same parser and metric code as every other
+variant.
+
+% =====================================================================
+\section{Results}
+\label{sec:results}
+
+Table~\ref{tab:main-results} is the main result. All rows are on the canonical
+225-row test split and are therefore directly comparable to each other and to
+the encoder methods evaluated on the same split.
+
+\begin{table}[H]
+\centering
+\caption{Generative judges on the canonical 225-row test split, reliability
+macro-F1 as the primary metric. Evidence tier is defined in
+Section~\ref{sec:protocols}: measured rows carry full diagnostics and
+bootstrap intervals, derived rows carry reconstructed confusion matrices,
+reported rows carry neither.}
+\label{tab:main-results}
+\footnotesize
+\begin{tabularx}{\linewidth}{Xlrrr}
+\toprule
+Variant & Tier & Faith. & Rel. & Reliable \\
+\midrule
+Always-reliable floor                    & ---      & 0.4201 & 0.4668 & 0.4186 \\
+\midrule
+\multicolumn{5}{l}{\emph{Zero-shot, Qwen2.5-1.5B-Instruct-4bit}} \\
+Method 1, direct                         & measured & 0.4739 & 0.4238 & 0.4701 \\
+Method 2, marker                         & measured & 0.3477 & 0.2399 & 0.3513 \\
+\midrule
+\multicolumn{5}{l}{\emph{LoRA, Qwen2.5-1.5B-Instruct-4bit}} \\
+Direct, unbalanced                       & derived  & 0.4201 & 0.4668 & 0.4186 \\
+Direct, balanced $256{\times}4$          & derived  & 0.4669 & 0.4668 & 0.4636 \\
+Marker                                   & derived  & 0.4201 & 0.4668 & 0.4186 \\
+\midrule
+\multicolumn{5}{l}{\emph{Full fine-tuning, Qwen2.5-7B-Instruct}} \\
+Direct, unbalanced                       & reported & 0.544  & 0.467  & 0.540  \\
+\textbf{Direct, balanced}                & reported & \textbf{0.580} & \textbf{0.555} & \textbf{0.586} \\
+Direct, balanced, lr $3\cdot10^{-5}$     & reported & 0.533  & 0.457  & 0.532  \\
+Marker                                   & reported & 0.488  & 0.500  & 0.485  \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Neither Prompted Judge Establishes a Gain over the Floor}
+\label{sec:results-zeroshot}
+
+The zero-shot direct judge scores 0.4701 against a floor of 0.4186. The
+paired stratified bootstrap puts that difference at $+0.0515$ with a 95\%
+interval of [$-0.0124$, $0.1140$] and $P(\Delta>0)=0.945$. On the canonical
+split the improvement is therefore \emph{not} established at the 95\% level.
+This corrects the reading invited by our team's overview report, which places
+the full-corpus figures 0.4946 and 0.4194 side by side without an interval;
+the point estimate is positive and reasonably stable across populations
+(0.4701 test, 0.4882 validation, 0.4946 full corpus), but 225 rows do not
+resolve a gap of this size.
+
+The marker judge scores 0.3513, and here the bootstrap is decisive in the
+other direction: $\Delta=-0.0673$ against the floor with interval
+[$-0.1190$, $-0.0182$] and $P(\Delta>0)=0.004$. Method 2 is the only variant
+in this article --- and, on point estimates, the only method in the project
+with reported numbers --- that is significantly \emph{worse than predicting a
+constant}. We bootstrapped only our own variants against the floor, so the
+comparison outside this article rests on point estimates alone.
+The direct-versus-marker comparison is also decisive,
+$P(\Delta>0)=0.9995$. Full intervals are in
+Appendix~\ref{sec:appendix-bootstrap}.
+
+Point estimates with intervals are in Table~\ref{tab:bootstrap-point} and the
+paired comparisons in Table~\ref{tab:bootstrap-delta}; the underlying
+confusion matrices for every split are in Tables~\ref{tab:direct-confusion}
+and~\ref{tab:marker-confusion}.
+
+Output-format compliance is not the explanation for either result. The direct
+judge produces zero unparseable outputs on all 2,245 rows; the marker judge
+produces three, an invalid rate of 0.13\%.
+
+\subsection{Axis Collapse}
+\label{sec:results-collapse}
+
+The prompted judge does not perform two judgements. On the full corpus the
+direct judge emits different values for the two axes on 3 rows out of 2,245
+(0.13\%) and the marker judge on 2 rows (0.09\%), while the gold labels differ
+on 375 rows (16.70\%); see Table~\ref{tab:axis-coupling}. The joint prediction
+distribution (Table~\ref{tab:joint-predictions}) is essentially two-valued:
+for the direct judge, 1,281 rows receive $(0,0)$, 961 receive $(1,1)$, and 3
+receive $(0,1)$; the $(1,0)$ cell is never produced.
+
+The rare gold cell makes this concrete. Of the 27 corpus rows that are
+faithful but irrelevant, the direct judge labels 18 as $(0,0)$ and 9 as
+$(1,1)$ --- never $(1,0)$, the correct answer. The marker judge labels all 27
+as $(0,0)$.
+
+The prompt states the axes as independent criteria and the model is not
+capacity-bound on the format, since it emits well-formed JSON on every row.
+What collapses is the decision, not the syntax: the judge forms a single
+overall impression of the answer and writes it into both fields. Because
+reliability is the conjunction, this collapse is partly masked in the headline
+metric --- if both axes carry the same value, the conjunction equals that
+value --- which is precisely why per-axis reporting is necessary to see it.
+The practical consequence is that the whole two-axis design, including the
+per-axis thresholds and the axis-independence instruction, buys nothing at
+this model scale.
+
+\subsection{Error-Seeking Bias, Not PASS Bias}
+\label{sec:results-bias}
+
+Large prompted judges in this project fail by approving too much. The small
+prompted judge fails the opposite way. The direct judge flags 1,284 of 2,245
+rows as unreliable, 57.2\%, against a gold base rate of 27.7\%. The marker
+judge flags 2,000 rows, 89.1\%. Recall of the unreliable class is
+correspondingly high --- 0.640 for direct and 0.905 for marker on the full
+corpus --- and precision correspondingly poor, 0.311 and 0.282.
+
+The decision-theoretic reading (Table~\ref{tab:operating-point}) is more
+informative than the macro-F1. On the
+full corpus the direct judge's PASS set contains 961 answers of which 23.3\%
+are actually unreliable, against a 27.7\% base rate: accepting its approval
+reduces the error density in the approved pile by four percentage points. On
+the test split the same quantity is 27.0\% against a 28.0\% base rate, i.e.
+no reduction at all. The PASS verdict of a 1.5B prompted judge is close to
+uninformative, and a reviewer who trusts it is doing approximately as well as
+a reviewer who skips reading.
+
+Discrimination, as opposed to operating point, is uniformly weak. Youden's
+$J = \mathrm{TPR}+\mathrm{TNR}-1$ on the reliability axis is $0.095$ (direct)
+and $0.020$ (marker) on the full corpus, $0.022$ and $0.094$ on test, and
+$0.080$ and $0.058$ on validation. The ordering between the two modes flips
+between populations, so the large macro-F1 gap between direct and marker is
+driven almost entirely by \emph{where each mode sits on the FAIL--PASS axis},
+not by how well either separates the classes. Since a generative judge emits
+a hard verdict, that operating point cannot be moved after the fact.
+
+Per-marker recall (Appendix~\ref{sec:appendix-permarker}) is consistent with
+this: the direct judge's recall on unreliable rows varies from 0.333
+(\texttt{reason\_incomplete\_answer},
+\texttt{reason\_missed\_chunk\_conditions}) to 0.783
+(\texttt{reason\_answer\_for\_operator}), but the spread is dominated by class
+sizes of 3--32 rows and is not separable from the 57\% blanket flag rate.
+
+Prompt format matters more than any of this: the two contracts agree on only
+60.6\% of reliability verdicts, Cohen's $\kappa = 0.113$
+(Appendix~\ref{sec:appendix-agreement}).
+
+Answer length is not the hidden driver. The AUC of answer length as a
+predictor of the direct judge's unreliable verdict is 0.568, against 0.497 for
+the gold unreliable label: the judge has a mild length bias that the labels
+do not share, but it is far too weak to explain the flag rate.
+
+\subsection{Marker Conditioning Fails in Two Separable Ways}
+\label{sec:results-markers}
+
+Marker macro-F1 is 0.0123 on the full corpus, which invites the summary
+``noise''. That summary hides a decomposable structure.
+
+\textbf{Format non-compliance.} 624 of 2,245 marker predictions, 27.8\%, are
+strings outside the 21-label vocabulary the prompt states
+(Table~\ref{tab:marker-vocab}). They are not
+arbitrary: 566 are \texttt{reason\_hallucination} and 58 are
+\texttt{reason\_hallucinated}, both one-token drifts from the admissible
+\texttt{reason\_hallucinated\_fact}. The model has understood the naming
+convention and failed to reproduce a specific string. Because the repository
+metric averages over the union of gold-present and prediction-present labels,
+each invented string enters as a guaranteed-zero class and drags the macro
+average down. Restricting the average to gold-present classes raises the score
+from 0.0123 to 0.0175 on the full corpus and from 0.0136 to 0.0222 on test
+(Table~\ref{tab:marker-decomposition}).
+
+\textbf{Taxonomy incompetence.} The remaining score is still floor-level, and
+this component is real. Restricted to the explicit marker classes --- dropping
+the \texttt{none} and \texttt{unknown} sentinels, which the metric otherwise
+rewards for free --- macro-F1 is 0.0052 on the full corpus and 0.0000 on test.
+Exact marker match on the 140 explicit-marker rows is 6, and on the 20 such
+test rows it is 0. Of the 32 rows whose gold marker is
+\texttt{reason\_hallucinated\_fact}, 13 receive a prediction somewhere in the
+hallucination family, most of them the out-of-vocabulary spelling.
+
+The two components have different fixes and different prognoses. Schema-guided
+decoding~\cite{willard2023efficient} eliminates the first component outright
+and would recover roughly a quarter of the predictions into the admissible
+set. The second component is a data problem: 140 usable rows spread over 12 of the 13 taxonomy
+classes --- \texttt{reason\_other} never survives conversion at all --- with
+20 rows in the test split, cannot train or evaluate a 13-way classifier at any
+decoding discipline.
+
+Marker conditioning also \emph{costs} on the binary task it was supposed to
+help. Requiring an error name first acts as an error-seeking prior: the model
+that has just written \texttt{reason\_hallucination} is not going to write
+\texttt{"faithfulness": 1}. This is the mechanism behind the 89.1\% flag rate
+and, through it, behind the below-floor macro-F1. The hypothesis that markers
+act as a free rationale is therefore rejected in its cheap form; whether it
+survives with constrained decoding and a denser marker channel is untested.
+
+\subsection{LoRA at 1.5B Does Not Beat Zero-Shot}
+\label{sec:results-lora}
+
+Unbalanced LoRA collapses completely: the adapter emits $(1,1)$ for all 225
+held-out rows, reproducing the always-reliable floor exactly on every axis
+(0.4201 / 0.4668 / 0.4186). Marker LoRA collapses identically on the binary
+axes and additionally predicts \texttt{none} for every row, giving marker
+macro-F1 of 0.0761. Two epochs of SFT on a corpus that is 72.3\% reliable
+teaches the majority label and nothing else.
+
+Balancing the SFT train set to 256 rows per label pair removes the
+faithfulness collapse. The balanced adapter predicts $(1,1)$ on 133 rows and
+$(0,1)$ on 92, lifting reliability macro-F1 from 0.4186 to 0.4636 and
+faithfulness from 0.4201 to 0.4669; the reconstructed confusion matrices are
+in Table~\ref{tab:lora-reconstruction}. It still never predicts
+$\mathrm{relevance}=0$, so relevance macro-F1 stays pinned at the
+all-positive value, and it still does not reach the zero-shot direct judge's
+0.4701. Balancing recovers most of the damage that fine-tuning caused; it does
+not produce a net gain over not fine-tuning at all.
+
+Three factors plausibly contribute and we can only bound the first two. The
+adapter is rank 8 over the last 16 layers of a 4-bit model, which is a small
+capacity budget. The effective optimizer step count is 449, since the 3,592
+iterations run at batch size 1 with 8 gradient-accumulation steps. And the
+training distribution does not match the evaluation distribution: under the
+2,000 / 5,000-character SFT caps, 61.9\% of rows lose text and 36.1\% of all
+context characters are discarded, while the held-out evaluation file is
+written untruncated (Appendix~\ref{sec:appendix-truncation}). The adapter
+learns to judge from a truncated context and is then asked to judge from a
+full one. This is a defect of the harness, not a property of LoRA, and it must
+be fixed before the LoRA branch can be called properly tested.
+
+\subsection{Full Fine-Tuning: Balancing Is the Lever}
+\label{sec:results-fullft}
+
+Scaling the same two contracts to a fully fine-tuned 7B model reproduces every
+qualitative finding and shifts the level. Unbalanced direct fine-tuning
+reaches 0.540 reliability macro-F1 but retains the relevance collapse ---
+its relevance macro-F1 of 0.467 is the all-positive value of 0.4668 to
+rounding, and the reported relevance confusion has no true negatives.
+Balancing the train split lifts every metric at once: reliability
+$0.540 \to 0.586$, faithfulness $0.544 \to 0.580$, relevance
+$0.467 \to 0.555$. Raising the learning rate to $3\cdot10^{-5}$ undoes the
+gain and lands the model \emph{below} the all-positive relevance value of
+0.4668, at 0.457: with no true negatives reported, the handful of
+$\mathrm{relevance}=0$ predictions it does emit are essentially all wrong, so
+the high-LR model is strictly worse than collapsing. This confirms that the
+lever was the label prior and not optimization strength. Marker fine-tuning again
+underperforms direct on both binary axes (0.485 reliability) and leaves marker
+macro-F1 at 0.079, the same floor as every other marker attempt.
+
+At 0.586, the balanced 7B direct judge is the best score obtained on the
+canonical 225-row test split by any method in this project, generative or
+encoder-based. The encoder-based methods scored on this same split by our team
+reach 0.5203 (validation-calibrated LettuceDetect features) and 0.5635
+(pseudo-label-tuned claim-level NLI combined with a separate relevance head);
+their split reproduces ours exactly on every count this comparison uses.
+This claim needs one qualification that our own project documents get wrong. The RuModernBERT cross-encoder baseline frequently quoted
+at 0.5879 is evaluated on a 1,571 / 225 / 449 split, not on the canonical
+1,796 / 224 / 225 split, and its 449-row test population is twice the size and
+differently constituted. The two numbers are not comparable, and the sentence
+``full fine-tuning beats the encoder baseline'' is not supported by evidence
+of the kind this article requires. What is supported is the within-split
+statement above.
+
+The 7B rows carry no uncertainty estimate. Given that the difference between
+the balanced 7B judge and the encoder-family results on the same split is of
+the order of 0.02--0.05 macro-F1, and that comparably sized differences in
+Section~\ref{sec:results-zeroshot} did not survive a bootstrap on 225 rows, no
+ranking among the leading methods should be treated as established.
+
+% =====================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\textbf{One verdict, written twice.} The single most consequential finding is
+that the prompted 1.5B judge does not implement the two-axis contract at all.
+It reads the answer, forms one impression, and writes it into both JSON
+fields. Everything downstream inherits this: the axis-independence instruction
+is inert, per-axis analysis is degenerate, and the 16.70\% of rows where the
+axes genuinely disagree are unreachable by construction. Full fine-tuning at
+7B partially breaks the collapse --- the balanced model's relevance macro-F1
+of 0.555 is well above the all-positive value, so it is producing genuine
+relevance decisions --- which suggests the collapse is a capacity and
+supervision effect rather than a prompt-design effect. The design implication
+is that if two axes are wanted from a small judge, they should be two calls or
+two heads, not two fields of one JSON object.
+
+\textbf{Operating point versus discrimination.} Both prompted variants have
+near-zero discrimination ($J$ between 0.02 and 0.10, unstable across splits)
+but very different operating points, and the entire macro-F1 gap between them
+comes from the operating point. A generative judge that emits a hard verdict
+gives no way to move that point after the fact. This is the structural
+disadvantage of Methods 1 and 2 relative to methods that expose a score, and
+it is worth stating precisely: the encoder methods on this same split gain
+0.10 macro-F1 purely from validation-fitted thresholds, a lever that is simply
+unavailable here. Reading verdict probabilities from token log-probabilities
+--- the approach taken by the prompt-optimized judge branch of this project
+--- is the natural way to recover it.
+
+\textbf{Marker conditioning is not a free rationale.} The hypothesis was that
+naming the error type first would sharpen the binary decision. It does the
+opposite, and the mechanism is legible: committing to an error name commits
+the model to finding an error. The cost is large enough to push the method
+below the trivial baseline. The two failure components separate cleanly ---
+one quarter of predictions violate a closed vocabulary that the prompt
+states, and the rest are wrong about the taxonomy --- and only the first has a
+cheap fix. At 140 usable annotated rows over 12 populated classes, the second
+is not addressable at all on the current release.
+
+\textbf{Prompting and fine-tuning fail from opposite ends of the same axis.}
+The two failure modes in this article are one mechanism seen twice. Prompting
+pushes the judge toward FAIL --- 57.2\% of the corpus flagged in direct mode
+and 89.1\% in marker mode, against a 27.7\% base rate --- because the
+instruction frames the task as fault-finding and the marker field turns that
+framing into a commitment. Naive supervised fine-tuning pushes it the other
+way, toward PASS, because two epochs on a 72.3\%-reliable corpus absorb the
+label prior: the unbalanced adapter at 1.5B and the unbalanced full
+fine-tune at 7B both report zero true negatives on relevance. Neither regime
+is discriminating better than the other; they sit at opposite ends of the
+FAIL--PASS axis. Balancing is the intervention that moves the supervised end
+of that axis back toward the data, which is why it is the only lever that
+worked at either scale.
+
+\textbf{Balancing dominates scale and learning rate.} Across both model sizes,
+the same single intervention moves the metric: making the four label pairs
+equiprobable in the SFT set. It converts total collapse into a working
+classifier at 1.5B and adds 0.046 macro-F1 at 7B, while a threefold learning
+rate increase at 7B loses 0.054. The uniform failure mode of naive SFT here is
+prior absorption, and the corpus prior is strong enough (72.3\% reliable,
+87.7\% relevant) that two epochs of unbalanced training reach it and stop.
+
+\textbf{The ceiling looks like a data property.} Every method in this
+project, generative or encoder-based, lands between roughly 0.52 and 0.59
+reliability macro-F1 on the canonical split, and the differences among the
+leaders are of the same magnitude as the bootstrap intervals on 225 rows.
+Going from a rank-8 adapter over 16 layers of a 1.5B model --- under a million
+trainable parameters --- to all 7.6 billion parameters of the 7B model buys
+about 0.12 macro-F1, while balancing a training set buys 0.05 at the same
+scale. That pattern points at label quality, annotation density and test set
+size rather than model capacity.
+
+\textbf{Threats to validity.} The 225-row test split is small enough that no
+comparison in the leading group is resolvable; the split is stratified on the
+reliable label only, so per-axis relevance metrics on validation and test rest
+on a single faithful-but-irrelevant row each; the 7B numbers are aggregates
+without diagnostics or intervals; the LoRA numbers are reconstructions from
+reported aggregates and cannot be re-measured because the adapter weights are
+gone; and the LoRA branch is confounded by the SFT truncation mismatch, so its
+negative result bounds the harness as configured rather than the method.
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+Within the generative-judge family, the prompt contract matters more than the
+model, and the training-set prior matters more than both. The direct contract
+beats the marker contract decisively at every scale tested. The
+marker-conditioned judge is the only variant we tested against the trivial
+baseline that performs significantly worse than a constant prediction, and it
+is the only method in the project whose reported score falls below that
+baseline at all; its failure decomposes
+into a format-compliance component with a known fix and a data-density
+component without one. Zero-shot prompting of a 1.5B judge does not establish
+a gain over the trivial baseline on the canonical split, and its verdicts are
+better described as error-seeking than as PASS-biased: it flags twice as many
+answers as are actually unreliable, and its approvals carry almost no
+information. LoRA at 1.5B does not beat its own zero-shot baseline, though
+that comparison is confounded by a train/inference truncation mismatch that
+should be repaired before the branch is written off. Full fine-tuning at 7B
+with a balanced train split reaches 0.586 reliability macro-F1, the best score
+on the canonical split in this project --- but without an uncertainty
+estimate, and with the frequently quoted encoder comparison invalidated
+because that baseline was scored on a different split.
+
+The immediate work items follow directly: persist per-row predictions from the
+7B evaluation so the leading result acquires the diagnostics and intervals
+every other measured row in this article carries; apply schema-guided decoding
+to the marker field; fix the SFT truncation mismatch and re-run the LoRA
+branch; and, for any generative judge intended to be operated rather than
+benchmarked, expose verdict probabilities so that the operating point becomes
+a tunable parameter instead of a property of the prompt.
+
+\medskip
+\noindent\textbf{Code and artifacts.}
+\url{https://github.com/aldem2k00/rag-reliability}
+
+\clearpage
+\appendix
+\section{Detailed Results}
+\label{sec:appendix-results}
+
+\subsection{Zero-Shot Confusion Matrices and Per-Class Scores}
+\label{sec:appendix-confusion}
+
+\begin{table}[H]
+\centering
+\caption{Zero-shot direct judge (Method 1), Qwen2.5-1.5B-Instruct-4bit. TN,
+FP, FN and TP are stated with respect to the positive class named in the axis
+column: faithful, relevant, or reliable.}
+\label{tab:direct-confusion}
+\footnotesize
+\begin{tabular}{llrrrrrrr}
+\toprule
+Split & Axis & TN & FP & FN & TP & F1$_0$ & F1$_1$ & $\fmacro$ \\
+\midrule
+\multirow{3}{*}{Full (2,245)}
+ & Faithfulness & 381 & 215 & 903 & 746 & 0.4053 & 0.5716 & 0.4885 \\
+ & Relevance    & 188 &  87 & 1{,}093 & 877 & 0.2416 & 0.5978 & 0.4197 \\
+ & Reliability  & 399 & 224 & 885 & 737 & 0.4185 & 0.5707 & 0.4946 \\
+\midrule
+\multirow{3}{*}{Validation (224)}
+ & Faithfulness &  38 &  23 &  90 &  73 & 0.4021 & 0.5637 & 0.4829 \\
+ & Relevance    &  18 &  10 & 109 &  87 & 0.2323 & 0.5939 & 0.4131 \\
+ & Reliability  &  39 &  23 &  89 &  73 & 0.4105 & 0.5659 & 0.4882 \\
+\midrule
+\multirow{3}{*}{Test (225)}
+ & Faithfulness &  36 &  26 &  89 &  74 & 0.3850 & 0.5627 & 0.4739 \\
+ & Relevance    &  18 &  10 & 106 &  91 & 0.2368 & 0.6107 & 0.4238 \\
+ & Reliability  &  36 &  27 &  89 &  73 & 0.3830 & 0.5573 & 0.4701 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Zero-shot marker judge (Method 2), same model and decoding. The
+consistently large FN column is the error-seeking bias: the judge assigns the
+negative class to almost everything.}
+\label{tab:marker-confusion}
+\footnotesize
+\begin{tabular}{llrrrrrrr}
+\toprule
+Split & Axis & TN & FP & FN & TP & F1$_0$ & F1$_1$ & $\fmacro$ \\
+\midrule
+\multirow{3}{*}{Full (2,245)}
+ & Faithfulness & 537 & 59 & 1{,}463 & 186 & 0.4137 & 0.1964 & 0.3051 \\
+ & Relevance    & 253 & 22 & 1{,}745 & 225 & 0.2226 & 0.2030 & 0.2128 \\
+ & Reliability  & 564 & 59 & 1{,}436 & 186 & 0.4300 & 0.1993 & 0.3146 \\
+\midrule
+\multirow{3}{*}{Validation (224)}
+ & Faithfulness &  55 &  6 & 138 &  25 & 0.4331 & 0.2577 & 0.3454 \\
+ & Relevance    &  25 &  3 & 168 &  28 & 0.2262 & 0.2467 & 0.2365 \\
+ & Reliability  &  56 &  6 & 137 &  25 & 0.4392 & 0.2591 & 0.3491 \\
+\midrule
+\multirow{3}{*}{Test (225)}
+ & Faithfulness &  59 &  3 & 140 &  23 & 0.4521 & 0.2434 & 0.3477 \\
+ & Relevance    &  28 &  0 & 171 &  26 & 0.2467 & 0.2332 & 0.2399 \\
+ & Reliability  &  60 &  3 & 139 &  23 & 0.4580 & 0.2447 & 0.3513 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Operating point of the reliability verdict. The PASS set is the set
+of answers the judge approves; leakage is the fraction of it that is actually
+unreliable, to be compared with the base rate in the same population.
+Youden's $J$ summarizes discrimination independently of operating point.}
+\label{tab:operating-point}
+\footnotesize
+\begin{tabular}{llrrrrrr}
+\toprule
+Mode & Split & Base rate & PASS set & Leakage & FAIL set & FAIL prec. & $J$ \\
+\midrule
+\multirow{3}{*}{Direct}
+ & Validation & 0.2768 &  96 & 0.2396 &  128 & 0.3047 & $+0.0796$ \\
+ & Test       & 0.2800 & 100 & 0.2700 &  125 & 0.2880 & $+0.0220$ \\
+ & Full       & 0.2775 & 961 & 0.2331 & 1{,}284 & 0.3107 & $+0.0948$ \\
+\midrule
+\multirow{3}{*}{Marker}
+ & Validation & 0.2768 &  31 & 0.1935 &  193 & 0.2902 & $+0.0575$ \\
+ & Test       & 0.2800 &  26 & 0.1154 &  199 & 0.3015 & $+0.0944$ \\
+ & Full       & 0.2775 & 245 & 0.2408 & 2{,}000 & 0.2820 & $+0.0200$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $J$ column is the reason Section~\ref{sec:results-bias} refuses to claim
+that either mode discriminates better than the other: the ordering reverses
+between test and full corpus, and every value is close to the zero of an
+uninformative predictor. The leakage column is more stable and more
+interpretable --- the direct judge's approvals are barely cleaner than the
+population it drew them from.
+
+\subsection{Axis Coupling}
+\label{sec:appendix-coupling}
+
+\begin{table}[H]
+\centering
+\caption{Rows on which the two predicted axes differ, against rows on which
+the two gold axes differ. A judge implementing the two-axis contract should
+approximately match the gold row.}
+\label{tab:axis-coupling}
+\begin{tabular}{lrrr}
+\toprule
+Source & Full (2,245) & Test (225) & Fraction (full) \\
+\midrule
+Gold labels                 & 375 & 36 & 0.1670 \\
+Zero-shot direct prediction &   3 &  1 & 0.0013 \\
+Zero-shot marker prediction &   2 &  0 & 0.0009 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Joint prediction distribution against the joint gold distribution,
+full corpus. The $(1,0)$ cell --- faithful but irrelevant --- is never
+predicted by either mode.}
+\label{tab:joint-predictions}
+\footnotesize
+\begin{tabular}{lrrrr}
+\toprule
+Source & $(0,0)$ & $(0,1)$ & $(1,0)$ & $(1,1)$ \\
+\midrule
+Gold                        &   248 & 348 & 27 & 1{,}622 \\
+Zero-shot direct prediction & 1{,}281 &   3 &  0 &   961 \\
+Zero-shot marker prediction & 1{,}998 &   2 &  0 &   245 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On the 27 gold $(1,0)$ rows specifically, the direct judge predicts $(0,0)$
+18 times and $(1,1)$ 9 times; the marker judge predicts $(0,0)$ 27 times.
+
+\subsection{Prompt-Format Sensitivity}
+\label{sec:appendix-agreement}
+
+The two prompt contracts differ only in whether a marker field precedes the
+binary fields. Their reliability verdicts agree on 60.6\% of the full corpus,
+with Cohen's $\kappa = 0.113$ (test: 60.0\%, $\kappa = 0.125$). A minor
+formatting change to the output contract therefore flips two rows in five.
+This is a larger effect than the difference between any two adaptation
+regimes we tested, and it bounds how much confidence any single-prompt
+zero-shot result deserves.
+
+\subsection{Bootstrap Uncertainty}
+\label{sec:appendix-bootstrap}
+
+Intervals are percentile 95\% intervals from 10,000 paired stratified
+bootstrap replicates on the 225-row test split, seed 42, resampling within the
+reliable and unreliable strata so class counts are preserved. All systems are
+scored on identical resampled indices.
+
+\begin{table}[H]
+\centering
+\caption{Test macro-F1 with bootstrap intervals, zero-shot variants. The
+always-reliable baseline is constant across replicates because the strata
+sizes are fixed.}
+\label{tab:bootstrap-point}
+\begin{tabular}{llr}
+\toprule
+Variant & Axis & $\fmacro$ [95\% CI] \\
+\midrule
+Always reliable  & Reliability  & 0.4186 [0.4186, 0.4186] \\
+\midrule
+\multirow{3}{*}{Direct}
+ & Faithfulness & 0.4739 [0.4095, 0.5365] \\
+ & Relevance    & 0.4238 [0.3642, 0.4834] \\
+ & Reliability  & 0.4701 [0.4062, 0.5326] \\
+\midrule
+\multirow{3}{*}{Marker}
+ & Faithfulness & 0.3477 [0.2963, 0.3982] \\
+ & Relevance    & 0.2399 [0.1864, 0.2931] \\
+ & Reliability  & 0.3513 [0.2996, 0.4004] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Paired bootstrap comparisons on the reliability axis, test split.
+$\Delta$ is the difference of the two point estimates; the interval and
+$P(\Delta>0)$ come from the paired replicate distribution, in which the first
+system scores above the second in that fraction of replicates.}
+\label{tab:bootstrap-delta}
+\footnotesize
+\begin{tabular}{lrrr}
+\toprule
+Comparison & $\Delta$ & 95\% CI & $P(\Delta>0)$ \\
+\midrule
+Direct $-$ always reliable & $+0.0515$ & [$-0.0124$, $+0.1140$] & 0.9451 \\
+Marker $-$ always reliable & $-0.0673$ & [$-0.1190$, $-0.0182$] & 0.0042 \\
+Direct $-$ marker          & $+0.1188$ & [$+0.0451$, $+0.1929$] & 0.9995 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The replicate means differ from the point differences by at most 0.0008
+($-0.0681$ and $+0.1196$ for the second and third rows), the usual small
+resampling bias; the point differences are reported because they are the
+estimand.
+
+Only two of the three comparisons are established at the 95\% level, and one
+of them is a negative result: the marker judge is worse than a constant
+prediction. The direct judge's advantage over the floor is not established on
+225 rows.
+
+\subsection{Per-Marker Recall of the Unreliable Class}
+\label{sec:appendix-permarker}
+
+Computed on the full corpus so that the smallest classes have any support at
+all. Marker labels here are gold; \texttt{unknown} denotes unreliable rows
+with no annotator marker.
+
+\begin{table}[H]
+\centering
+\caption{Fraction of unreliable rows of each gold marker class that the judge
+flags as unreliable. Both modes flag far more than they should overall, so
+these recalls must be read against the blanket flag rates of 57.2\% (direct)
+and 89.1\% (marker).}
+\label{tab:per-marker-recall}
+\footnotesize
+\begin{tabular}{lrrrrr}
+\toprule
+Gold marker & $n$ & Direct caught & Direct recall & Marker caught & Marker recall \\
+\midrule
+\texttt{unknown}                          & 483 & 311 & 0.644 & 435 & 0.901 \\
+\texttt{reason\_hallucinated\_fact}       &  32 &  18 & 0.562 &  31 & 0.969 \\
+\texttt{reason\_answer\_for\_operator}    &  23 &  18 & 0.783 &  23 & 1.000 \\
+\texttt{reason\_off\_topic\_answer}       &  18 &  12 & 0.667 &  17 & 0.944 \\
+\texttt{reason\_chunk\_fact\_mixup}       &  18 &  12 & 0.667 &  17 & 0.944 \\
+\texttt{reason\_false\_verification}      &  14 &   7 & 0.500 &  13 & 0.929 \\
+\texttt{reason\_irrelevant\_chunk\_used}  &  14 &   8 & 0.571 &  11 & 0.786 \\
+\texttt{reason\_incomplete\_answer}       &   6 &   2 & 0.333 &   5 & 0.833 \\
+\texttt{reason\_wrong\_navigation}        &   5 &   4 & 0.800 &   4 & 0.800 \\
+\texttt{reason\_outdated\_fact}           &   4 &   3 & 0.750 &   3 & 0.750 \\
+\texttt{reason\_missed\_chunk\_conditions}&   3 &   1 & 0.333 &   2 & 0.667 \\
+\texttt{reason\_reveals\_ai\_identity}    &   2 &   2 & 1.000 &   2 & 1.000 \\
+\texttt{reason\_missed\_complaint\_handoff}& 1 &   1 & 1.000 &   1 & 1.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:per-marker-recall} invites one comparison in particular.
+The classes our team's overview report singles out as hardest ---
+\texttt{reason\_chunk\_fact\_mixup} and
+\texttt{reason\_missed\_chunk\_conditions} --- behave differently for the
+small prompted judge than for the larger prompt-optimized judge reported
+there. The small judge catches 12 of 18 mix-ups, but it also flags 57\% of
+everything, so the number carries no evidence that it detected the mix-up as
+such. Per-marker recall is only interpretable jointly with the flag rate, and
+at these class sizes it is not interpretable at all.
+
+\subsection{Marker Vocabulary and Metric Decomposition}
+\label{sec:appendix-vocab}
+
+\begin{table}[H]
+\centering
+\caption{Marker predictions of the zero-shot marker judge. Out-of-vocabulary
+strings are not in the 21-label set stated in the prompt.}
+\label{tab:marker-vocab}
+\footnotesize
+\begin{tabular}{lrr}
+\toprule
+Predicted marker & Full (2,245) & In vocabulary \\
+\midrule
+\texttt{reason\_hallucination}      & 566 & no \\
+\texttt{unsupported\_claim}         & 543 & yes \\
+\texttt{reason\_hallucinated\_fact} & 495 & yes \\
+\texttt{none}                       & 225 & yes \\
+\texttt{contradiction}              & 206 & yes \\
+\texttt{reason\_off\_topic\_answer} &  67 & yes \\
+\texttt{reason\_hallucinated}       &  58 & no \\
+\texttt{off\_topic\_answer}         &  51 & yes \\
+\texttt{reason\_reveals\_ai\_identity} & 20 & yes \\
+\texttt{incomplete\_answer}         &   9 & yes \\
+\texttt{reason\_incomplete\_answer} &   2 & yes \\
+(unparsed)                          &   3 & --- \\
+\midrule
+Out-of-vocabulary total             & 624 & 27.80\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Marker macro-F1 under three label-set conventions. The repository
+default averages over the union of gold-present and prediction-present labels,
+so every invented string enters as a guaranteed-zero class.}
+\label{tab:marker-decomposition}
+\footnotesize
+\begin{tabular}{lrr}
+\toprule
+Averaging convention & Full (2,245) & Test (225) \\
+\midrule
+Union of gold and predicted labels (repository default) & 0.0123 & 0.0136 \\
+Gold-present labels only                                & 0.0175 & 0.0222 \\
+Explicit gold markers only (no \texttt{none}/\texttt{unknown}) & 0.0052 & 0.0000 \\
+\midrule
+Exact marker match on explicit-marker rows & 6 / 140 & 0 / 20 \\
+\texttt{reason\_hallucinated\_fact} rows predicted in the hallucination family & 13 / 32 & 1 / 4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The difference between the first two rows on the full corpus,
+$0.0175 - 0.0123$, is the share of the metric that schema-guided decoding
+would recover mechanically by keeping invented strings out of the averaging
+set. The third row is what would remain, and it is the part that only a denser
+marker channel can address.
+
+\subsection{SFT Truncation Mismatch}
+\label{sec:appendix-truncation}
+
+The SFT record builder caps the dialogue at 2,000 and the context at 5,000
+characters so that prompts fit \texttt{max\_seq\_length} 4,096. The held-out
+evaluation file is written from the untruncated samples, and the inference
+command consumes that file. Table~\ref{tab:truncation} quantifies the
+resulting gap.
+
+\begin{table}[H]
+\centering
+\caption{Input length statistics and the effect of the SFT caps. ``Rows
+truncated'' counts rows where the dialogue exceeds 2,000 or the context
+exceeds 5,000 characters. Context characters lost is the fraction of all
+context text discarded from the SFT records.}
+\label{tab:truncation}
+\footnotesize
+\begin{tabular}{lrrrrr}
+\toprule
+Split & Dialogue med. & Context med. & Context p95 & Rows truncated & Ctx. chars lost \\
+\midrule
+Train (1,796)      & 458 & 6{,}436 & 12{,}880 & 61.7\% & 36.1\% \\
+Validation (224)   & 482 & 6{,}538 & 12{,}975 & 62.5\% & 35.5\% \\
+Test (225)         & 436 & 6{,}287 & 12{,}697 & 62.2\% & 36.5\% \\
+Full (2,245)       & 458 & 6{,}422 & 12{,}832 & 61.9\% & 36.1\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Across the corpus only 5.0\% of rows exceed the dialogue cap and only 6.5\% of
+dialogue characters are lost; the mismatch is almost entirely in the context,
+where the
+median row is 6,422 characters against a 5,000-character cap. The zero-shot
+variants are unaffected --- they never truncate --- so this confound is
+specific to the LoRA branch and to any comparison that treats LoRA and
+zero-shot as differing only in weights.
+
+\subsection{Derived LoRA Confusion Matrices}
+\label{sec:appendix-lora}
+
+Per-row LoRA predictions were not persisted and the organizer adapter weights
+are no longer on disk, so these confusion matrices are reconstructed rather
+than measured. The reconstruction uses two reported facts: the balanced
+adapter predicts $(1,1)$ on 133 test rows and $(0,1)$ on the remaining 92, and
+its reported macro-F1 values are 0.4669 (faithfulness) and 0.4636
+(reliability). Given the predicted-positive count and the gold-positive count,
+macro-F1 is strictly monotone in the true-positive count, so each confusion
+matrix is uniquely determined.
+
+\begin{table}[H]
+\centering
+\caption{Reconstructed test confusion matrices for the balanced
+$256{\times}4$ direct LoRA adapter. The relevance row is exact rather than
+reconstructed, because predicted relevance is 1 on all 225 rows.}
+\label{tab:lora-reconstruction}
+\footnotesize
+\begin{tabular}{lrrrrrr}
+\toprule
+Axis & TN & FP & FN & TP & $\fmacro$ (recon.) & $\fmacro$ (reported) \\
+\midrule
+Faithfulness & 23 & 39 & 69 &  94 & 0.4669 & 0.4669 \\
+Relevance    &  0 & 28 &  0 & 197 & 0.4668 & 0.4668 \\
+Reliability  & 23 & 40 & 69 &  93 & 0.4636 & 0.4636 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The reconstruction admits a free internal consistency check. Since predicted
+relevance is 1 everywhere, the predicted reliability label is identical to the
+predicted faithfulness label, so the difference between the two true-positive
+counts must equal the number of predicted-faithful rows whose gold labels are
+$(F{=}1, R{=}0)$. The reconstruction gives $94 - 93 = 1$, and the test split
+contains exactly one such row (Table~\ref{tab:joint-labels}). The two
+independently reconstructed matrices agree with the split's label structure,
+which is stronger evidence for them than either matrix alone.
+
+The unbalanced direct adapter and the marker adapter both emit $(1,1)$ on all
+225 rows, so their confusion matrices are trivially exact: TN $=0$, FP $=62$,
+FN $=0$, TP $=163$ on faithfulness and TN $=0$, FP $=63$, FN $=0$, TP $=162$
+on reliability, giving the always-reliable floor values reported in
+Table~\ref{tab:main-results}. The marker adapter additionally predicts
+\texttt{none} on every row, giving marker macro-F1 of 0.0761.
+
+\subsection{Reproduction}
+\label{sec:appendix-repro}
+
+Zero-shot variants, from the converted corpus:
+
+\begin{verbatim}
+python scripts/prepare_data.py \
+  --input from_organizators/data/data.zip \
+  --output data/organizers.jsonl
+
+python scripts/run_prompt_baseline.py \
+  --data data/organizers.jsonl \
+  --output results/organizers_qwen_direct_predictions.jsonl \
+  --mode direct --backend mlx
+
+python scripts/evaluate.py \
+  --data data/organizers.jsonl \
+  --predictions results/organizers_qwen_direct_predictions.jsonl \
+  --output results/organizers_qwen_direct_metrics.json
+\end{verbatim}
+
+Replace \texttt{-{}-mode direct} with \texttt{-{}-mode marker} for Method 2.
+The canonical split is regenerated deterministically by
+\texttt{dataset.split\_samples(samples, seed=42)}; the split is a function of
+the corpus and the seed only, so every per-split number in this article is
+recomputable from the two prediction files above without rerunning inference.
+\texttt{scripts/analyze\_prompted\_judges.py} does exactly that and prints
+each diagnostic under the table label it feeds:
+
+\begin{verbatim}
+python scripts/analyze_prompted_judges.py \
+  --data data/organizers.jsonl \
+  --direct results/organizers_qwen_direct_predictions.jsonl \
+  --marker results/organizers_qwen_marker_predictions.jsonl
+\end{verbatim}
+
+LoRA benchmark preparation, which also prints the exact training and
+inference commands:
+
+\begin{verbatim}
+python scripts/prepare_lora_benchmark.py \
+  --data data/organizers.jsonl --mode direct \
+  --balance-train-labels --target-per-label 256
+\end{verbatim}
+
+The 7B fine-tuning and evaluation run from
+\texttt{notebooks/qwen7b\_full\_finetune\_datasphere.ipynb} and
+\texttt{notebooks/eval\_finetuned\_datasphere.ipynb} respectively; the winning
+configuration is \texttt{MODE="direct"}, \texttt{BALANCE\_TRAIN=True},
+\texttt{LR=1e-5}, \texttt{EPOCHS=2}. The evaluation notebook currently keeps
+per-row predictions in memory only; persisting them is the single change that
+would move the 7B rows of Table~\ref{tab:main-results} from the reported tier
+to the measured tier.
+
+\begin{thebibliography}{99}
+\bibitem{dettmers2023qlora}
+T.~Dettmers, A.~Pagnoni, A.~Holtzman, L.~Zettlemoyer.
+QLoRA: Efficient Finetuning of Quantized LLMs.
+arXiv:2305.14314, 2023.
+
+\bibitem{es2023ragas}
+S.~Es, J.~James, L.~Espinosa-Anke, S.~Schockaert.
+RAGAS: Automated Evaluation of Retrieval Augmented Generation.
+arXiv:2309.15217, 2023.
+
+\bibitem{hsieh2023distilling}
+C.-Y.~Hsieh et al.
+Distilling Step-by-Step! Outperforming Larger Language Models with Less
+Training Data and Smaller Model Sizes.
+arXiv:2305.02301, 2023.
+
+\bibitem{hu2021lora}
+E.~J.~Hu et al.
+LoRA: Low-Rank Adaptation of Large Language Models.
+arXiv:2106.09685, 2021.
+
+\bibitem{niu2024ragtruth}
+C.~Niu et al.
+RAGTruth: A Hallucination Corpus for Developing Trustworthy
+Retrieval-Augmented Language Models.
+arXiv:2401.00396, 2024.
+
+\bibitem{qwen2024qwen25}
+Qwen Team.
+Qwen2.5 Technical Report.
+arXiv:2412.15115, 2024.
+
+\bibitem{ravi2024lynx}
+S.~S.~Ravi et al.
+Lynx: An Open Source Hallucination Evaluation Model.
+arXiv:2407.08488, 2024.
+
+\bibitem{willard2023efficient}
+B.~T.~Willard, R.~Louf.
+Efficient Guided Generation for Large Language Models.
+arXiv:2307.09702, 2023.
+
+\bibitem{zheng2023judging}
+L.~Zheng et al.
+Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena.
+arXiv:2306.05685, 2023.
+\end{thebibliography}
+
+\end{document}
